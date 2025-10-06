@@ -12,6 +12,13 @@ Welcome to the Firefly Common Cache Library documentation! This directory contai
   - First cache operations
   - Verification steps
 
+- **[Auto-Configuration Guide](AUTO_CONFIGURATION.md)** - Spring Boot auto-configuration
+  - How auto-configuration works
+  - Configuration properties
+  - Conditional beans
+  - Customization options
+  - Testing auto-configuration
+
 ### Core Documentation
 
 - **[Architecture Guide](ARCHITECTURE.md)** - Understand how it works

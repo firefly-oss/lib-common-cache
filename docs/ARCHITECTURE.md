@@ -26,40 +26,40 @@ The Firefly Common Cache Library is built following **Hexagonal Architecture** (
 ### Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Application Core                           │
+┌──────────────────────────────────────────────────────────────────┐
+│                        Application Core                          │
 │                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │              FireflyCacheManager                          │  │
-│  │  - Orchestrates cache operations                         │  │
-│  │  - Manages multiple cache instances                      │  │
-│  │  - Provides unified API                                  │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                            │                                    │
-│                            ▼                                    │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │         CacheAdapter (Port Interface)                    │  │
-│  │  - Defines cache operations contract                     │  │
-│  │  - Reactive API (Mono/Flux)                             │  │
-│  │  - Type-safe operations                                  │  │
-│  └──────────────────────────────────────────────────────────┘  │
+│   ┌──────────────────────────────────────────────────────────┐   │
+│   │              FireflyCacheManager                         │   │
+│   │  - Orchestrates cache operations                         │   │
+│   │  - Manages multiple cache instances                      │   │
+│   │  - Provides unified API                                  │   │
+│   └──────────────────────────────────────────────────────────┘   │
+│                                │                                 │
+│                                ▼                                 │
+│   ┌──────────────────────────────────────────────────────────┐   │
+│   │         CacheAdapter (Port Interface)                    │   │
+│   │  - Defines cache operations contract                     │   │
+│   │  - Reactive API (Mono/Flux)                              │   │
+│   │  - Type-safe operations                                  │   │
+│   └──────────────────────────────────────────────────────────┘   │
 │                                                                  │
-└──────────────────────────┬───────────────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
-┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-│   Caffeine   │   │    Redis     │   │    NoOp      │
-│   Adapter    │   │   Adapter    │   │   Adapter    │
-│              │   │              │   │              │
-│ (In-Memory)  │   │(Distributed) │   │  (Fallback)  │
-└──────────────┘   └──────────────┘   └──────────────┘
-       │                   │                   │
-       ▼                   ▼                   ▼
-┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-│   Caffeine   │   │    Redis     │   │     None     │
-│   Library    │   │   (Lettuce)  │   │              │
-└──────────────┘   └──────────────┘   └──────────────┘
+└────────────────────────────────┬─────────────────────────────────┘
+                                 │
+              ┌──────────────────┼──────────────────┐
+              ▼                  ▼                  ▼
+       ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+       │   Caffeine   │   │    Redis     │   │    NoOp      │
+       │   Adapter    │   │   Adapter    │   │   Adapter    │
+       │              │   │              │   │              │
+       │ (In-Memory)  │   │(Distributed) │   │  (Fallback)  │
+       └──────────────┘   └──────────────┘   └──────────────┘
+             │                   │                   │
+             ▼                   ▼                   ▼
+       ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+       │   Caffeine   │   │    Redis     │   │     None     │
+       │   Library    │   │   (Lettuce)  │   │              │
+       └──────────────┘   └──────────────┘   └──────────────┘
 ```
 
 ### Layers
