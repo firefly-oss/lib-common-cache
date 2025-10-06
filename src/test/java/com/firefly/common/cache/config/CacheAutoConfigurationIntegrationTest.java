@@ -78,7 +78,7 @@ class CacheAutoConfigurationIntegrationTest {
                 .verifyComplete();
 
         // Get value
-        StepVerifier.create(cacheManager.get(key, String.class))
+        StepVerifier.create(cacheManager.<String, String>get(key, String.class))
                 .assertNext(result -> {
                     assertThat(result).isPresent();
                     assertThat(result.get()).isEqualTo(value);
@@ -91,7 +91,7 @@ class CacheAutoConfigurationIntegrationTest {
                 .verifyComplete();
 
         // Verify evicted
-        StepVerifier.create(cacheManager.get(key, String.class))
+        StepVerifier.create(cacheManager.<String, String>get(key, String.class))
                 .assertNext(result -> assertThat(result).isEmpty())
                 .verifyComplete();
     }
@@ -103,7 +103,7 @@ class CacheAutoConfigurationIntegrationTest {
         Duration ttl = Duration.ofMillis(100);
 
         // Put with TTL
-        StepVerifier.create(cacheManager.put(key, value, ttl))
+        StepVerifier.create(cacheManager.<String, String>put(key, value, ttl))
                 .verifyComplete();
 
         // Should exist immediately
@@ -115,7 +115,7 @@ class CacheAutoConfigurationIntegrationTest {
         Thread.sleep(150);
 
         // Should be expired
-        StepVerifier.create(cacheManager.get(key, String.class))
+        StepVerifier.create(cacheManager.<String, String>get(key, String.class))
                 .assertNext(result -> assertThat(result).isEmpty())
                 .verifyComplete();
     }
@@ -123,9 +123,9 @@ class CacheAutoConfigurationIntegrationTest {
     @Test
     void shouldGetCacheStatistics() {
         // Perform some operations
-        cacheManager.put("stat-key-1", "value1").block();
-        cacheManager.get("stat-key-1", String.class).block(); // hit
-        cacheManager.get("stat-key-2", String.class).block(); // miss
+        cacheManager.<String, String>put("stat-key-1", "value1").block();
+        cacheManager.<String, String>get("stat-key-1", String.class).block(); // hit
+        cacheManager.<String, String>get("stat-key-2", String.class).block(); // miss
 
         // Get statistics
         StepVerifier.create(cacheManager.getStats("default"))
@@ -147,7 +147,7 @@ class CacheAutoConfigurationIntegrationTest {
                     assertThat(health.getCacheName()).isEqualTo("default");
                     assertThat(health.getCacheType()).isEqualTo(CacheType.CAFFEINE);
                     assertThat(health.isAvailable()).isTrue();
-                    assertThat(health.getStatus()).isEqualTo(com.firefly.common.cache.core.HealthStatus.UP);
+                    assertThat(health.getStatus()).isEqualTo("UP");
                 })
                 .verifyComplete();
     }
@@ -155,19 +155,19 @@ class CacheAutoConfigurationIntegrationTest {
     @Test
     void shouldClearCache() {
         // Add some entries
-        cacheManager.put("clear-key-1", "value1").block();
-        cacheManager.put("clear-key-2", "value2").block();
+        cacheManager.<String, String>put("clear-key-1", "value1").block();
+        cacheManager.<String, String>put("clear-key-2", "value2").block();
 
         // Clear cache
         StepVerifier.create(cacheManager.clear())
                 .verifyComplete();
 
         // Verify cleared
-        StepVerifier.create(cacheManager.get("clear-key-1", String.class))
+        StepVerifier.create(cacheManager.<String, String>get("clear-key-1", String.class))
                 .assertNext(result -> assertThat(result).isEmpty())
                 .verifyComplete();
 
-        StepVerifier.create(cacheManager.get("clear-key-2", String.class))
+        StepVerifier.create(cacheManager.<String, String>get("clear-key-2", String.class))
                 .assertNext(result -> assertThat(result).isEmpty())
                 .verifyComplete();
     }
@@ -178,11 +178,11 @@ class CacheAutoConfigurationIntegrationTest {
         String key = "complex-object-key";
 
         // Put complex object
-        StepVerifier.create(cacheManager.put(key, obj))
+        StepVerifier.create(cacheManager.<String, TestObject>put(key, obj))
                 .verifyComplete();
 
         // Get complex object
-        StepVerifier.create(cacheManager.get(key, TestObject.class))
+        StepVerifier.create(cacheManager.<String, TestObject>get(key, TestObject.class))
                 .assertNext(result -> {
                     assertThat(result).isPresent();
                     TestObject retrieved = result.get();
@@ -200,17 +200,17 @@ class CacheAutoConfigurationIntegrationTest {
         String value2 = "second-value";
 
         // First put should succeed
-        StepVerifier.create(cacheManager.putIfAbsent(key, value1))
+        StepVerifier.create(cacheManager.<String, String>putIfAbsent(key, value1))
                 .expectNext(true)
                 .verifyComplete();
 
         // Second put should fail (key exists)
-        StepVerifier.create(cacheManager.putIfAbsent(key, value2))
+        StepVerifier.create(cacheManager.<String, String>putIfAbsent(key, value2))
                 .expectNext(false)
                 .verifyComplete();
 
         // Value should still be the first one
-        StepVerifier.create(cacheManager.get(key, String.class))
+        StepVerifier.create(cacheManager.<String, String>get(key, String.class))
                 .assertNext(result -> {
                     assertThat(result).isPresent();
                     assertThat(result.get()).isEqualTo(value1);
