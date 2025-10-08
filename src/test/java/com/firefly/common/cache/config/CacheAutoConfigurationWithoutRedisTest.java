@@ -140,7 +140,7 @@ class CacheAutoConfigurationWithoutRedisTest {
     void shouldCreateCacheSerializerBean() {
         this.contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
-            assertThat(context).hasSingleBean("cacheSerializer");
+            assertThat(context).hasBean("cacheSerializer");
         });
     }
 
@@ -148,7 +148,7 @@ class CacheAutoConfigurationWithoutRedisTest {
     void shouldCreateCacheObjectMapperBean() {
         this.contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
-            assertThat(context).hasSingleBean("cacheObjectMapper");
+            assertThat(context).hasBean("cacheObjectMapper");
         });
     }
 
@@ -156,7 +156,7 @@ class CacheAutoConfigurationWithoutRedisTest {
     void shouldCreateCacheSelectionStrategyBean() {
         this.contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
-            assertThat(context).hasSingleBean("cacheSelectionStrategy");
+            assertThat(context).hasBean("cacheSelectionStrategy");
         });
     }
 }
