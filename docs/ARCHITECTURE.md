@@ -19,22 +19,22 @@ The library follows these key principles:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Application Layer                        │
-│                                                              │
+│                                                             │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │      FireflyCacheManager (implements CacheAdapter)     │ │
-│  │                                                         │ │
-│  │  • Direct cache operations (get, put, evict, etc.)    │ │
-│  │  • Automatic fallback support                         │ │
-│  │  • Health monitoring & statistics                     │ │
+│  │                                                        │ │
+│  │  • Direct cache operations (get, put, evict, etc.)     │ │
+│  │  • Automatic fallback support                          │ │
+│  │  • Health monitoring & statistics                      │ │
 │  └────────────────────────────────────────────────────────┘ │
-│                          │                                   │
-│                          ▼                                   │
+│                          │                                  │
+│                          ▼                                  │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │              CacheAdapter (Port Interface)             │ │
-│  │                                                         │ │
-│  │  • Reactive operations (Mono/Flux)                    │ │
-│  │  • TTL support                                        │ │
-│  │  • Statistics & health                                │ │
+│  │                                                        │ │
+│  │  • Reactive operations (Mono/Flux)                     │ │
+│  │  • TTL support                                         │ │
+│  │  • Statistics & health                                 │ │
 │  └────────────────────────────────────────────────────────┘ │
 └─────────────────────────┬───────────────────────────────────┘
                           │

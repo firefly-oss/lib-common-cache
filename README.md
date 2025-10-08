@@ -256,9 +256,9 @@ The library follows **hexagonal architecture** principles with a simplified desi
 │  │         FireflyCacheManager (implements             │  │
 │  │              CacheAdapter)                          │  │
 │  │                                                     │  │
-│  │  • Direct cache operations (get, put, evict, etc.) │  │
-│  │  • Automatic fallback support                      │  │
-│  │  • Health monitoring & statistics                  │  │
+│  │  • Direct cache operations (get, put, evict, etc.)  │  │
+│  │  • Automatic fallback support                       │  │
+│  │  • Health monitoring & statistics                   │  │
 │  └─────────────────────────────────────────────────────┘  │
 │              │                          │                 │
 │              ▼                          ▼                 │
