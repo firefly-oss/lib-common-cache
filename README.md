@@ -43,6 +43,7 @@ A unified caching library providing standardized cache abstractions with Caffein
 ## ✨ Features
 
 - **Zero Configuration**: Works out of the box with Spring Boot auto-configuration
+- **Optional Dependencies**: Redis is completely optional - use Caffeine-only or add Redis when needed
 - **Hexagonal Architecture**: Clean separation between business logic and infrastructure
 - **Multiple Cache Providers**: Support for Caffeine (in-memory) and Redis (distributed)
 - **Reactive API**: Non-blocking operations using Project Reactor
@@ -57,6 +58,7 @@ A unified caching library providing standardized cache abstractions with Caffein
 
 ### 1. Add Dependency
 
+**For Caffeine-only (in-memory caching):**
 ```xml
 <dependency>
     <groupId>com.firefly</groupId>
@@ -65,7 +67,28 @@ A unified caching library providing standardized cache abstractions with Caffein
 </dependency>
 ```
 
+**For Caffeine + Redis (distributed caching):**
+```xml
+<dependency>
+    <groupId>com.firefly</groupId>
+    <artifactId>lib-common-cache</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</dependency>
+
+<!-- Add Redis dependencies -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+</dependency>
+<dependency>
+    <groupId>io.lettuce</groupId>
+    <artifactId>lettuce-core</artifactId>
+</dependency>
+```
+
 **That's it!** The library auto-configures with sensible defaults. No additional configuration required.
+
+> 💡 **Note:** Redis is completely optional. The library works perfectly with just Caffeine (in-memory cache). See [Optional Dependencies](docs/OPTIONAL_DEPENDENCIES.md) for details.
 
 ### 2. (Optional) Configure Properties
 
@@ -456,6 +479,7 @@ logging:
 For more detailed information, please refer to the documentation in the `docs/` folder:
 
 - **[Quick Start Guide](docs/QUICKSTART.md)** - Get started quickly with step-by-step instructions
+- **[Optional Dependencies](docs/OPTIONAL_DEPENDENCIES.md)** - Redis is optional - learn how it works ⭐
 - **[Auto-Configuration Guide](docs/AUTO_CONFIGURATION.md)** - Spring Boot auto-configuration details
 - **[Architecture Guide](docs/ARCHITECTURE.md)** - Understand the hexagonal architecture and design patterns
 - **[Configuration Reference](docs/CONFIGURATION.md)** - Complete configuration options and examples
