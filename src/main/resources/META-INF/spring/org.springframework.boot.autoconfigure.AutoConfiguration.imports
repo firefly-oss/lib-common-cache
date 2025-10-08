@@ -1,2 +1,3 @@
 com.firefly.common.cache.config.CacheAutoConfiguration
+com.firefly.common.cache.config.RedisCacheAutoConfiguration
 
