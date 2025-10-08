@@ -236,9 +236,18 @@ public class CacheOperations {
 
 ## 🏗️ Architecture
 
-### Simplified Architecture
+### Overview
 
-The library uses a clean, simple architecture where `FireflyCacheManager` **IS** the cache:
+The library follows **hexagonal architecture** principles with a simplified design where `FireflyCacheManager` **IS** the cache itself, not a manager of multiple caches.
+
+#### Key Design Principles
+
+1. **Single Cache Instance**: One cache configuration per application (not multiple registered caches)
+2. **Direct API**: `FireflyCacheManager` implements `CacheAdapter` directly for simple usage
+3. **Automatic Fallback**: Built-in support for primary/fallback cache (e.g., Redis → Caffeine)
+4. **Consistent Key Format**: Both Caffeine and Redis use `keyPrefix:cacheName:key` format
+
+#### Architecture Diagram
 
 ```
 ┌───────────────────────────────────────────────────────────┐
@@ -269,21 +278,32 @@ The library uses a clean, simple architecture where `FireflyCacheManager` **IS**
 
 ### Key Components
 
-- **CacheAdapter**: Port interface defining cache operations
-- **FireflyCacheManager**: Orchestrates multiple cache adapters
-- **CacheSelectionStrategy**: Determines which cache to use
-- **CacheSerializer**: Handles object serialization
-- **Cache Annotations**: Declarative caching support
-- **Health & Metrics**: Monitoring and observability
+#### Public API
+- **FireflyCacheManager**: Main cache interface - implements `CacheAdapter` directly
+  - Provides all cache operations (get, put, evict, clear, etc.)
+  - Supports automatic fallback (e.g., Redis → Caffeine)
+  - Single instance per application
+
+#### Internal Components (Ports & Adapters)
+- **CacheAdapter**: Port interface defining reactive cache operations
+- **CaffeineCacheAdapter**: High-performance in-memory cache implementation
+- **RedisCacheAdapter**: Distributed cache implementation (optional)
+- **CacheSerializer**: JSON serialization with Jackson
+- **Health & Metrics**: Built-in monitoring and observability
+
+#### Key Format
+Both Caffeine and Redis use consistent key formatting:
+- Format: `keyPrefix:cacheName:key`
+- Example: `firefly:cache:default:user:123`
+- Configurable via `key-prefix` property
 
 ## ⚙️ Configuration
 
 ### Cache Types
 
-- `CAFFEINE`: High-performance in-memory cache
-- `REDIS`: Distributed cache with persistence
-- `AUTO`: Automatically selects the best available cache
-- `NOOP`: Disables caching (useful for testing)
+- `CAFFEINE`: High-performance in-memory cache (always available)
+- `REDIS`: Distributed cache with persistence (requires Redis dependencies)
+- `AUTO`: Automatically selects Redis if available, otherwise Caffeine
 
 ### Caffeine Configuration
 
@@ -291,15 +311,17 @@ The library uses a clean, simple architecture where `FireflyCacheManager` **IS**
 firefly:
   cache:
     caffeine:
-      default:
-        maximum-size: 10000          # Maximum number of entries
-        expire-after-write: PT1H     # Expire after write duration
-        expire-after-access: PT30M   # Expire after access duration
-        refresh-after-write: PT45M   # Refresh after write duration
-        record-stats: true           # Enable statistics
-        weak-keys: false             # Use weak references for keys
-        weak-values: false           # Use weak references for values
-        soft-values: false           # Use soft references for values
+      cache-name: default            # Name of the cache
+      enabled: true                  # Enable/disable Caffeine
+      key-prefix: "firefly:cache"    # Prefix for all keys (format: prefix:cacheName:key)
+      maximum-size: 10000            # Maximum number of entries
+      expire-after-write: PT1H       # Expire after write duration
+      expire-after-access: PT30M     # Expire after access duration
+      refresh-after-write: PT45M     # Refresh after write duration
+      record-stats: true             # Enable statistics
+      weak-keys: false               # Use weak references for keys
+      weak-values: false             # Use weak references for values
+      soft-values: false             # Use soft references for values
 ```
 
 ### Redis Configuration
@@ -308,19 +330,20 @@ firefly:
 firefly:
   cache:
     redis:
-      default:
-        host: localhost
-        port: 6379
-        database: 0
-        password: secret             # Optional
-        username: user               # Optional (Redis 6+)
-        connection-timeout: PT10S
-        command-timeout: PT5S
-        key-prefix: "firefly:cache"
-        default-ttl: PT30M           # Optional default TTL
-        ssl: false
-        max-pool-size: 8
-        min-pool-size: 0
+      cache-name: default            # Name of the cache
+      enabled: true                  # Enable/disable Redis
+      host: localhost                # Redis server host
+      port: 6379                     # Redis server port
+      database: 0                    # Redis database number
+      password: secret               # Optional password
+      username: user                 # Optional username (Redis 6+)
+      connection-timeout: PT10S      # Connection timeout
+      command-timeout: PT5S          # Command timeout
+      key-prefix: "firefly:cache"    # Prefix for all keys (format: prefix:cacheName:key)
+      default-ttl: PT30M             # Optional default TTL for entries
+      ssl: false                     # Enable SSL/TLS
+      max-pool-size: 8               # Maximum connection pool size
+      min-pool-size: 0               # Minimum connection pool size
 ```
 
 ## 📊 Monitoring
@@ -421,13 +444,85 @@ class CacheIntegrationTest {
 
 ## 🔄 Migration Guide
 
+### Using FireflyCacheManager in Other Libraries
+
+The library is designed to be used as a dependency in other Firefly libraries (e.g., `lib-common-cqrs`).
+
+#### Correct Bean Matching
+
+```java
+import com.firefly.common.cache.manager.FireflyCacheManager;
+
+@Configuration
+public class MyConfiguration {
+
+    @Bean
+    @ConditionalOnBean(FireflyCacheManager.class)
+    public MyService myService(FireflyCacheManager cacheManager) {
+        return new MyService(cacheManager);
+    }
+}
+```
+
+#### Using the Cache
+
+```java
+@Service
+public class MyService {
+
+    private final FireflyCacheManager cacheManager;
+
+    public MyService(FireflyCacheManager cacheManager) {
+        this.cacheManager = cacheManager;
+    }
+
+    public Mono<User> getUser(String userId) {
+        // Direct API - no need to select cache
+        return cacheManager.get(userId, User.class)
+            .flatMap(cached -> {
+                if (cached.isPresent()) {
+                    return Mono.just(cached.get());
+                }
+                return loadUser(userId)
+                    .flatMap(user -> cacheManager.put(userId, user)
+                        .thenReturn(user));
+            });
+    }
+}
+```
+
+### Configuration Migration
+
+**Old (multiple caches - no longer supported):**
+```yaml
+firefly:
+  cache:
+    default-cache-name: my-cache
+    caffeine:
+      default:
+        maximum-size: 1000
+      cache1:
+        maximum-size: 500
+```
+
+**New (single cache):**
+```yaml
+firefly:
+  cache:
+    default-cache-type: REDIS  # or CAFFEINE or AUTO
+    caffeine:
+      cache-name: default
+      key-prefix: "firefly:cache"
+      maximum-size: 1000
+```
+
 ### From Spring Cache
 
 If you're migrating from Spring's `@Cacheable`:
 
-1. Replace Spring cache annotations with Firefly annotations
+1. Replace Spring cache annotations with programmatic API (recommended)
 2. Update configuration from `spring.cache.*` to `firefly.cache.*`
-3. Use reactive return types (`Mono`/`Flux`) where appropriate
+3. Use reactive return types (`Mono`/`Flux`)
 
 ### Performance Considerations
 
