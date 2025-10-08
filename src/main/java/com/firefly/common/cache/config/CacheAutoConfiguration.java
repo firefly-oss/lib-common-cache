@@ -153,10 +153,10 @@ public class CacheAutoConfiguration {
      */
     @Bean
     @ConditionalOnClass(name = "com.github.benmanes.caffeine.cache.Caffeine")
-    @ConditionalOnProperty(prefix = "firefly.cache.caffeine.default", name = "enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "firefly.cache.caffeine", name = "enabled", havingValue = "true", matchIfMissing = true)
     public CacheAdapter caffeineCacheAdapter(CacheProperties properties) {
         log.debug("Creating Caffeine cache adapter");
-        CacheProperties.CaffeineConfig caffeineProps = properties.getCaffeineConfig("default");
+        CacheProperties.CaffeineConfig caffeineProps = properties.getCaffeine();
 
         CaffeineCacheConfig config = CaffeineCacheConfig.builder()
                 .maximumSize(caffeineProps.getMaximumSize())
@@ -169,7 +169,7 @@ public class CacheAutoConfiguration {
                 .softValues(caffeineProps.isSoftValues())
                 .build();
 
-        return new CaffeineCacheAdapter("default", config);
+        return new CaffeineCacheAdapter(caffeineProps.getCacheName(), config);
     }
 
 }

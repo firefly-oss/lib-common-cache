@@ -85,8 +85,8 @@ class CacheAutoConfigurationWithoutRedisTest {
     void shouldWorkWithCustomCaffeineConfiguration() {
         this.contextRunner
                 .withPropertyValues(
-                        "firefly.cache.caffeine.default.maximum-size=500",
-                        "firefly.cache.caffeine.default.expire-after-write=PT30M"
+                        "firefly.cache.caffeine.maximum-size=500",
+                        "firefly.cache.caffeine.expire-after-write=PT30M"
                 )
                 .run(context -> {
                     assertThat(context).hasNotFailed();
@@ -112,7 +112,7 @@ class CacheAutoConfigurationWithoutRedisTest {
     @Test
     void shouldDisableCaffeineWhenPropertySetToFalse() {
         this.contextRunner
-                .withPropertyValues("firefly.cache.caffeine.default.enabled=false")
+                .withPropertyValues("firefly.cache.caffeine.enabled=false")
                 .run(context -> {
                     // Should fail because no cache adapters are available
                     assertThat(context).hasFailed();
@@ -120,15 +120,15 @@ class CacheAutoConfigurationWithoutRedisTest {
     }
 
     @Test
-    void shouldUseDefaultCacheNameFromProperties() {
+    void shouldUseCacheNameFromCaffeineConfig() {
         this.contextRunner
-                .withPropertyValues("firefly.cache.default-cache-name=my-custom-cache")
+                .withPropertyValues("firefly.cache.caffeine.cache-name=my-custom-cache")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
 
                     FireflyCacheManager manager = context.getBean(FireflyCacheManager.class);
                     assertThat(manager).isNotNull();
-                    // The cache name comes from the underlying adapter
+                    assertThat(manager.getCacheName()).isEqualTo("my-custom-cache");
                 });
     }
 

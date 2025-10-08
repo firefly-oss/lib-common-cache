@@ -51,9 +51,9 @@ class CacheAutoConfigurationRedisIntegrationTest {
                 .withPropertyValues(
                         "firefly.cache.enabled=true",
                         "firefly.cache.default-cache-type=REDIS",
-                        "firefly.cache.redis.default.host=" + redisContainer.getHost(),
-                        "firefly.cache.redis.default.port=" + redisContainer.getMappedPort(6379),
-                        "firefly.cache.redis.default.enabled=true"
+                        "firefly.cache.redis.host=" + redisContainer.getHost(),
+                        "firefly.cache.redis.port=" + redisContainer.getMappedPort(6379),
+                        "firefly.cache.redis.enabled=true"
                 )
                 .run(context -> {
                     // Verify core beans exist
@@ -67,8 +67,8 @@ class CacheAutoConfigurationRedisIntegrationTest {
                     // Verify configuration is correct
                     CacheProperties properties = context.getBean(CacheProperties.class);
                     assertThat(properties.getDefaultCacheType()).isEqualTo(CacheType.REDIS);
-                    
-                    CacheProperties.RedisConfig redisConfig = properties.getRedisConfig("default");
+
+                    CacheProperties.RedisConfig redisConfig = properties.getRedis();
                     assertThat(redisConfig.getHost()).isEqualTo(redisContainer.getHost());
                     assertThat(redisConfig.getPort()).isEqualTo(redisContainer.getMappedPort(6379));
                     assertThat(redisConfig.isEnabled()).isTrue();
@@ -101,10 +101,10 @@ class CacheAutoConfigurationRedisIntegrationTest {
                 .withPropertyValues(
                         "firefly.cache.enabled=true",
                         "firefly.cache.default-cache-type=AUTO",
-                        "firefly.cache.caffeine.default.enabled=true",
-                        "firefly.cache.redis.default.host=" + redisContainer.getHost(),
-                        "firefly.cache.redis.default.port=" + redisContainer.getMappedPort(6379),
-                        "firefly.cache.redis.default.enabled=true"
+                        "firefly.cache.caffeine.enabled=true",
+                        "firefly.cache.redis.host=" + redisContainer.getHost(),
+                        "firefly.cache.redis.port=" + redisContainer.getMappedPort(6379),
+                        "firefly.cache.redis.enabled=true"
                 )
                 .run(context -> {
                     assertThat(context).hasSingleBean(CacheProperties.class);
@@ -125,18 +125,18 @@ class CacheAutoConfigurationRedisIntegrationTest {
         contextRunner
                 .withPropertyValues(
                         "firefly.cache.enabled=true",
-                        "firefly.cache.redis.default.host=" + redisContainer.getHost(),
-                        "firefly.cache.redis.default.port=" + redisContainer.getMappedPort(6379),
-                        "firefly.cache.redis.default.database=2",
-                        "firefly.cache.redis.default.key-prefix=test:prefix",
-                        "firefly.cache.redis.default.connection-timeout=PT15S",
-                        "firefly.cache.redis.default.command-timeout=PT10S",
-                        "firefly.cache.redis.default.enabled=true"
+                        "firefly.cache.redis.host=" + redisContainer.getHost(),
+                        "firefly.cache.redis.port=" + redisContainer.getMappedPort(6379),
+                        "firefly.cache.redis.database=2",
+                        "firefly.cache.redis.key-prefix=test:prefix",
+                        "firefly.cache.redis.connection-timeout=PT15S",
+                        "firefly.cache.redis.command-timeout=PT10S",
+                        "firefly.cache.redis.enabled=true"
                 )
                 .run(context -> {
                     CacheProperties properties = context.getBean(CacheProperties.class);
-                    CacheProperties.RedisConfig redisConfig = properties.getRedisConfig("default");
-                    
+                    CacheProperties.RedisConfig redisConfig = properties.getRedis();
+
                     assertThat(redisConfig.getHost()).isEqualTo(redisContainer.getHost());
                     assertThat(redisConfig.getPort()).isEqualTo(redisContainer.getMappedPort(6379));
                     assertThat(redisConfig.getDatabase()).isEqualTo(2);
@@ -151,9 +151,9 @@ class CacheAutoConfigurationRedisIntegrationTest {
         contextRunner
                 .withPropertyValues(
                         "firefly.cache.enabled=true",
-                        "firefly.cache.redis.default.enabled=false",
-                        "firefly.cache.redis.default.host=" + redisContainer.getHost(),
-                        "firefly.cache.redis.default.port=" + redisContainer.getMappedPort(6379)
+                        "firefly.cache.redis.enabled=false",
+                        "firefly.cache.redis.host=" + redisContainer.getHost(),
+                        "firefly.cache.redis.port=" + redisContainer.getMappedPort(6379)
                 )
                 .run(context -> {
                     assertThat(context).hasSingleBean(CacheProperties.class);
@@ -162,37 +162,6 @@ class CacheAutoConfigurationRedisIntegrationTest {
                     // Should not create Redis beans when disabled
                     assertThat(context).doesNotHaveBean(ReactiveRedisConnectionFactory.class);
                     assertThat(context).doesNotHaveBean(ReactiveRedisTemplate.class);
-                });
-    }
-
-    @Test
-    void shouldWorkWithMultipleRedisDatabases() {
-        contextRunner
-                .withPropertyValues(
-                        "firefly.cache.enabled=true",
-                        "firefly.cache.redis.cache1.host=" + redisContainer.getHost(),
-                        "firefly.cache.redis.cache1.port=" + redisContainer.getMappedPort(6379),
-                        "firefly.cache.redis.cache1.database=1",
-                        "firefly.cache.redis.cache1.key-prefix=cache1:",
-                        "firefly.cache.redis.cache2.host=" + redisContainer.getHost(),
-                        "firefly.cache.redis.cache2.port=" + redisContainer.getMappedPort(6379),
-                        "firefly.cache.redis.cache2.database=2",
-                        "firefly.cache.redis.cache2.key-prefix=cache2:",
-                        "firefly.cache.redis.default.host=" + redisContainer.getHost(),
-                        "firefly.cache.redis.default.port=" + redisContainer.getMappedPort(6379),
-                        "firefly.cache.redis.default.enabled=true"
-                )
-                .run(context -> {
-                    CacheProperties properties = context.getBean(CacheProperties.class);
-                    
-                    // Verify different configurations
-                    CacheProperties.RedisConfig cache1Config = properties.getRedisConfig("cache1");
-                    assertThat(cache1Config.getDatabase()).isEqualTo(1);
-                    assertThat(cache1Config.getKeyPrefix()).isEqualTo("cache1:");
-                    
-                    CacheProperties.RedisConfig cache2Config = properties.getRedisConfig("cache2");
-                    assertThat(cache2Config.getDatabase()).isEqualTo(2);
-                    assertThat(cache2Config.getKeyPrefix()).isEqualTo("cache2:");
                 });
     }
 
@@ -209,9 +178,8 @@ class CacheAutoConfigurationRedisIntegrationTest {
                 )
                 .run(context -> {
                     CacheProperties properties = context.getBean(CacheProperties.class);
-                    
+
                     assertThat(properties.isEnabled()).isTrue();
-                    assertThat(properties.getDefaultCacheName()).isEqualTo("my-cache");
                     assertThat(properties.getDefaultCacheType()).isEqualTo(CacheType.CAFFEINE);
                     assertThat(properties.isMetricsEnabled()).isFalse();
                     assertThat(properties.isHealthEnabled()).isTrue();

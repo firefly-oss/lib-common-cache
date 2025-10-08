@@ -32,8 +32,8 @@ import java.util.Map;
 /**
  * Configuration properties for the Cache library.
  * <p>
- * This class centralizes all configuration for the cache library, including
- * cache type selection, adapter configurations, and global settings.
+ * Simplified configuration for a single cache with optional fallback support.
+ * The cache type is selected based on availability and preference.
  */
 @ConfigurationProperties(prefix = "firefly.cache")
 @Validated
@@ -46,30 +46,16 @@ public class CacheProperties {
     private boolean enabled = true;
 
     /**
-     * Default cache type to use when none is specified.
+     * Preferred cache type to use.
+     * <ul>
+     *   <li>CAFFEINE - Use in-memory cache (always available)</li>
+     *   <li>REDIS - Use distributed cache (requires Redis dependencies)</li>
+     *   <li>AUTO - Automatically select based on availability (Redis preferred if available)</li>
+     * </ul>
      * Defaults to CAFFEINE for optimal performance and reliability.
      */
     @NotNull(message = "Default cache type cannot be null")
     private CacheType defaultCacheType = CacheType.CAFFEINE;
-
-    /**
-     * Default cache name for operations when none is specified.
-     */
-    @NotBlank(message = "Default cache name cannot be blank")
-    @Size(max = 100, message = "Default cache name must not exceed 100 characters")
-    private String defaultCacheName = "default";
-
-    /**
-     * Default serialization format.
-     */
-    @NotNull(message = "Default serialization format cannot be null")
-    private String defaultSerializationFormat = "json";
-
-    /**
-     * Default timeout for cache operations.
-     */
-    @NotNull(message = "Default timeout cannot be null")
-    private Duration defaultTimeout = Duration.ofSeconds(5);
 
     /**
      * Whether to enable metrics collection.
@@ -87,56 +73,30 @@ public class CacheProperties {
     private boolean statsEnabled = true;
 
     /**
-     * Cache configurations by name.
+     * Caffeine cache configuration.
      */
     @Valid
-    private final Map<String, CacheConfig> caches = new HashMap<>();
+    @NotNull
+    private CaffeineConfig caffeine = new CaffeineConfig();
 
     /**
-     * Caffeine cache configurations by name.
+     * Redis cache configuration.
      */
     @Valid
-    private final Map<String, CaffeineConfig> caffeine = new HashMap<>();
+    @NotNull
+    private RedisConfig redis = new RedisConfig();
 
     /**
-     * Redis cache configurations by name.
+     * Caffeine cache configuration.
      */
-    @Valid
-    private final Map<String, RedisConfig> redis = new HashMap<>();
-
-    // Initialize default configurations
-    public CacheProperties() {
-        caches.put("default", new CacheConfig());
-        caffeine.put("default", new CaffeineConfig());
-        redis.put("default", new RedisConfig());
-    }
-
-    @Data
-    public static class CacheConfig {
-        /**
-         * Cache type for this specific cache.
-         * Defaults to CAFFEINE for optimal performance.
-         */
-        private CacheType type = CacheType.CAFFEINE;
-
-        /**
-         * Default TTL for cache entries.
-         */
-        private Duration defaultTtl;
-
-        /**
-         * Whether this cache is enabled.
-         */
-        private boolean enabled = true;
-
-        /**
-         * Serialization format for this cache.
-         */
-        private String serializationFormat = "json";
-    }
-
     @Data
     public static class CaffeineConfig {
+        /**
+         * Cache name for the Caffeine adapter.
+         */
+        private String cacheName = "default";
+
+
         /**
          * Whether Caffeine cache is enabled.
          */
@@ -185,8 +145,16 @@ public class CacheProperties {
         private boolean softValues = false;
     }
 
+    /**
+     * Redis cache configuration.
+     */
     @Data
     public static class RedisConfig {
+        /**
+         * Cache name for the Redis adapter.
+         */
+        private String cacheName = "default";
+
         /**
          * Whether Redis cache is enabled.
          */
@@ -261,35 +229,5 @@ public class CacheProperties {
          * Additional Redis configuration properties.
          */
         private Map<String, String> properties = new HashMap<>();
-    }
-
-    /**
-     * Gets the cache configuration for a specific cache name.
-     *
-     * @param cacheName the cache name
-     * @return the cache configuration
-     */
-    public CacheConfig getCacheConfig(String cacheName) {
-        return caches.getOrDefault(cacheName, caches.get("default"));
-    }
-
-    /**
-     * Gets the Caffeine configuration for a specific cache name.
-     *
-     * @param cacheName the cache name
-     * @return the Caffeine configuration
-     */
-    public CaffeineConfig getCaffeineConfig(String cacheName) {
-        return caffeine.getOrDefault(cacheName, caffeine.get("default"));
-    }
-
-    /**
-     * Gets the Redis configuration for a specific cache name.
-     *
-     * @param cacheName the cache name
-     * @return the Redis configuration
-     */
-    public RedisConfig getRedisConfig(String cacheName) {
-        return redis.getOrDefault(cacheName, redis.get("default"));
     }
 }

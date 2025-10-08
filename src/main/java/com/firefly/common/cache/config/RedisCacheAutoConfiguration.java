@@ -58,10 +58,10 @@ public class RedisCacheAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean(ReactiveRedisConnectionFactory.class)
-    @ConditionalOnExpression("${firefly.cache.redis.default.enabled:true} && '${firefly.cache.redis.default.host:}'.length() > 0")
+    @ConditionalOnExpression("${firefly.cache.redis.enabled:true} && '${firefly.cache.redis.host:}'.length() > 0")
     public ReactiveRedisConnectionFactory redisConnectionFactory(CacheProperties properties) {
         log.debug("Creating Redis connection factory from Firefly cache properties");
-        CacheProperties.RedisConfig redisProps = properties.getRedisConfig("default");
+        CacheProperties.RedisConfig redisProps = properties.getRedis();
         
         RedisStandaloneConfiguration serverConfig = new RedisStandaloneConfiguration();
         serverConfig.setHostName(redisProps.getHost());
@@ -124,7 +124,7 @@ public class RedisCacheAutoConfiguration {
                                          ReactiveRedisConnectionFactory connectionFactory,
                                          CacheSerializer serializer) {
         log.debug("Creating Redis cache adapter");
-        CacheProperties.RedisConfig redisProps = properties.getRedisConfig("default");
+        CacheProperties.RedisConfig redisProps = properties.getRedis();
         
         RedisCacheConfig config = RedisCacheConfig.builder()
                 .host(redisProps.getHost())
@@ -141,8 +141,8 @@ public class RedisCacheAutoConfiguration {
                 .minPoolSize(redisProps.getMinPoolSize())
                 .ssl(redisProps.isSsl())
                 .build();
-        
-        return new RedisCacheAdapter("default", redisTemplate, connectionFactory, config, serializer);
+
+        return new RedisCacheAdapter(redisProps.getCacheName(), redisTemplate, connectionFactory, config, serializer);
     }
 }
 
