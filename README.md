@@ -124,16 +124,19 @@ firefly:
 
 ## 💻 Usage
 
-### Programmatic API
+### Programmatic API (Recommended)
+
+The `FireflyCacheManager` implements the `CacheAdapter` interface directly, providing a simple and intuitive API:
 
 ```java
 @Service
 public class UserService {
-    
+
     @Autowired
     private FireflyCacheManager cacheManager;
-    
+
     public Mono<User> getUser(String userId) {
+        // Simple, direct API - no need to select cache
         return cacheManager.get(userId, User.class)
             .flatMap(cached -> {
                 if (cached.isPresent()) {
@@ -144,7 +147,15 @@ public class UserService {
                         .thenReturn(user));
             });
     }
-    
+
+    public Mono<Void> invalidateUser(String userId) {
+        return cacheManager.evict(userId).then();
+    }
+
+    public Mono<Void> clearAllUsers() {
+        return cacheManager.clear();
+    }
+
     private Mono<User> loadUserFromDatabase(String userId) {
         // Implementation details
         return Mono.empty();
@@ -177,7 +188,7 @@ public class ProductService {
 }
 ```
 
-### Cache-Specific Operations
+### Advanced Cache Operations
 
 ```java
 @Component
@@ -187,11 +198,15 @@ public class CacheOperations {
     private FireflyCacheManager cacheManager;
 
     public void performOperations() {
-        // Use specific cache
-        cacheManager.put("user-cache", "key1", "value1").subscribe();
+        // Basic operations
+        cacheManager.put("key1", "value1").subscribe();
+        cacheManager.get("key1").subscribe(value -> log.info("Value: {}", value));
 
-        // Conditional put
-        cacheManager.putIfAbsent("key2", "value2", Duration.ofMinutes(10))
+        // With TTL
+        cacheManager.put("key2", "value2", Duration.ofMinutes(10)).subscribe();
+
+        // Conditional put (only if key doesn't exist)
+        cacheManager.putIfAbsent("key3", "value3", Duration.ofMinutes(10))
             .doOnNext(wasInserted -> {
                 if (wasInserted) {
                     log.info("Value was inserted");
@@ -221,17 +236,21 @@ public class CacheOperations {
 
 ## 🏗️ Architecture
 
-### Hexagonal Architecture
+### Simplified Architecture
 
-The library follows hexagonal architecture principles:
+The library uses a clean, simple architecture where `FireflyCacheManager` **IS** the cache:
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│                      Application Core                     │
-│  ┌─────────────────┐    ┌──────────────────────────────┐  │
-│  │ FireflyCache    │    │     Cache Annotations        │  │
-│  │ Manager         │    │     (@Cacheable, etc.)       │  │
-│  └─────────────────┘    └──────────────────────────────┘  │
+│                      Application Layer                    │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │         FireflyCacheManager (implements             │  │
+│  │              CacheAdapter)                          │  │
+│  │                                                     │  │
+│  │  • Direct cache operations (get, put, evict, etc.) │  │
+│  │  • Automatic fallback support                      │  │
+│  │  • Health monitoring & statistics                  │  │
+│  └─────────────────────────────────────────────────────┘  │
 │              │                          │                 │
 │              ▼                          ▼                 │
 │  ┌────────────────────────────────────────────────────┐   │
