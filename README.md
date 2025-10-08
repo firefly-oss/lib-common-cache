@@ -107,6 +107,7 @@ firefly:
     caffeine:
       cache-name: default
       enabled: true
+      key-prefix: "firefly:cache"  # Prefix for all cache keys
       maximum-size: 1000
       expire-after-write: PT1H
       record-stats: true
@@ -118,7 +119,7 @@ firefly:
       host: localhost
       port: 6379
       database: 0
-      key-prefix: "firefly:cache"
+      key-prefix: "firefly:cache"  # Prefix for all cache keys
 ```
 
 ## 💻 Usage

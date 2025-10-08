@@ -32,6 +32,13 @@ import java.time.Duration;
 public class CaffeineCacheConfig {
 
     /**
+     * Key prefix for all cache entries.
+     * This prefix will be prepended to all keys stored in the cache.
+     */
+    @Builder.Default
+    private final String keyPrefix = "firefly:cache";
+
+    /**
      * Maximum number of entries the cache may contain.
      * If not set, the cache will grow without size-based bounds.
      */

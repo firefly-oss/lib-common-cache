@@ -103,6 +103,11 @@ public class CacheProperties {
         private boolean enabled = true;
 
         /**
+         * Key prefix for all cache entries.
+         */
+        private String keyPrefix = "firefly:cache";
+
+        /**
          * Maximum number of entries the cache may contain.
          */
         private Long maximumSize = 1000L;

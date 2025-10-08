@@ -159,6 +159,7 @@ public class CacheAutoConfiguration {
         CacheProperties.CaffeineConfig caffeineProps = properties.getCaffeine();
 
         CaffeineCacheConfig config = CaffeineCacheConfig.builder()
+                .keyPrefix(caffeineProps.getKeyPrefix())
                 .maximumSize(caffeineProps.getMaximumSize())
                 .expireAfterWrite(caffeineProps.getExpireAfterWrite())
                 .expireAfterAccess(caffeineProps.getExpireAfterAccess())

@@ -52,11 +52,13 @@ public class CaffeineCacheAdapter implements CacheAdapter {
 
     private final Cache<Object, Object> cache;
     private final String cacheName;
+    private final String keyPrefix;
     private final CaffeineCacheConfig config;
     private final ConcurrentHashMap<Object, Instant> expirationTimes;
 
     public CaffeineCacheAdapter(String cacheName, CaffeineCacheConfig config) {
         this.cacheName = cacheName;
+        this.keyPrefix = config.getKeyPrefix();
         this.config = config;
         this.expirationTimes = new ConcurrentHashMap<>();
         this.cache = buildCache(config);
@@ -108,18 +110,20 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K, V> Mono<Optional<V>> get(K key) {
         return Mono.fromCallable(() -> {
             try {
+                String prefixedKey = addKeyPrefix(key);
+
                 // Check custom TTL expiration first
-                Instant expiration = expirationTimes.get(key);
+                Instant expiration = expirationTimes.get(prefixedKey);
                 if (expiration != null && Instant.now().isAfter(expiration)) {
-                    cache.invalidate(key);
-                    expirationTimes.remove(key);
+                    cache.invalidate(prefixedKey);
+                    expirationTimes.remove(prefixedKey);
                     return Optional.<V>empty();
                 }
 
-                V value = (V) cache.getIfPresent(key);
+                V value = (V) cache.getIfPresent(prefixedKey);
                 return Optional.ofNullable(value);
             } catch (Exception e) {
-                log.warn("Error getting value from cache '{}' for key '{}': {}", 
+                log.warn("Error getting value from cache '{}' for key '{}': {}",
                         cacheName, key, e.getMessage());
                 return Optional.<V>empty();
             }
@@ -138,12 +142,13 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K, V> Mono<Void> put(K key, V value) {
         return Mono.fromRunnable(() -> {
             try {
-                cache.put(key, value);
+                String prefixedKey = addKeyPrefix(key);
+                cache.put(prefixedKey, value);
                 // Remove any custom expiration time
-                expirationTimes.remove(key);
+                expirationTimes.remove(prefixedKey);
                 log.debug("Put value in cache '{}' for key '{}'", cacheName, key);
             } catch (Exception e) {
-                log.error("Error putting value in cache '{}' for key '{}': {}", 
+                log.error("Error putting value in cache '{}' for key '{}': {}",
                          cacheName, key, e.getMessage(), e);
                 throw new RuntimeException("Failed to put value in cache", e);
             }
@@ -154,12 +159,13 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K, V> Mono<Void> put(K key, V value, Duration ttl) {
         return Mono.fromRunnable(() -> {
             try {
-                cache.put(key, value);
+                String prefixedKey = addKeyPrefix(key);
+                cache.put(prefixedKey, value);
                 // Track custom expiration time
-                expirationTimes.put(key, Instant.now().plus(ttl));
+                expirationTimes.put(prefixedKey, Instant.now().plus(ttl));
                 log.debug("Put value in cache '{}' for key '{}' with TTL {}", cacheName, key, ttl);
             } catch (Exception e) {
-                log.error("Error putting value in cache '{}' for key '{}' with TTL: {}", 
+                log.error("Error putting value in cache '{}' for key '{}' with TTL: {}",
                          cacheName, key, e.getMessage(), e);
                 throw new RuntimeException("Failed to put value in cache with TTL", e);
             }
@@ -171,17 +177,19 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K, V> Mono<Boolean> putIfAbsent(K key, V value) {
         return Mono.fromCallable(() -> {
             try {
+                String prefixedKey = addKeyPrefix(key);
+
                 // Check if key exists (considering custom TTL)
-                Instant expiration = expirationTimes.get(key);
+                Instant expiration = expirationTimes.get(prefixedKey);
                 if (expiration != null && Instant.now().isAfter(expiration)) {
-                    cache.invalidate(key);
-                    expirationTimes.remove(key);
+                    cache.invalidate(prefixedKey);
+                    expirationTimes.remove(prefixedKey);
                 }
 
-                V existingValue = (V) cache.getIfPresent(key);
+                V existingValue = (V) cache.getIfPresent(prefixedKey);
                 if (existingValue == null) {
-                    cache.put(key, value);
-                    expirationTimes.remove(key); // No custom TTL
+                    cache.put(prefixedKey, value);
+                    expirationTimes.remove(prefixedKey); // No custom TTL
                     log.debug("Put new value in cache '{}' for key '{}'", cacheName, key);
                     return true;
                 } else {
@@ -189,7 +197,7 @@ public class CaffeineCacheAdapter implements CacheAdapter {
                     return false;
                 }
             } catch (Exception e) {
-                log.error("Error in putIfAbsent for cache '{}' and key '{}': {}", 
+                log.error("Error in putIfAbsent for cache '{}' and key '{}': {}",
                          cacheName, key, e.getMessage(), e);
                 throw new RuntimeException("Failed to put value if absent", e);
             }
@@ -201,18 +209,20 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K, V> Mono<Boolean> putIfAbsent(K key, V value, Duration ttl) {
         return Mono.fromCallable(() -> {
             try {
+                String prefixedKey = addKeyPrefix(key);
+
                 // Check if key exists (considering custom TTL)
-                Instant expiration = expirationTimes.get(key);
+                Instant expiration = expirationTimes.get(prefixedKey);
                 if (expiration != null && Instant.now().isAfter(expiration)) {
-                    cache.invalidate(key);
-                    expirationTimes.remove(key);
+                    cache.invalidate(prefixedKey);
+                    expirationTimes.remove(prefixedKey);
                 }
 
-                V existingValue = (V) cache.getIfPresent(key);
+                V existingValue = (V) cache.getIfPresent(prefixedKey);
                 if (existingValue == null) {
-                    cache.put(key, value);
-                    expirationTimes.put(key, Instant.now().plus(ttl));
-                    log.debug("Put new value in cache '{}' for key '{}' with TTL {}", 
+                    cache.put(prefixedKey, value);
+                    expirationTimes.put(prefixedKey, Instant.now().plus(ttl));
+                    log.debug("Put new value in cache '{}' for key '{}' with TTL {}",
                              cacheName, key, ttl);
                     return true;
                 } else {
@@ -220,7 +230,7 @@ public class CaffeineCacheAdapter implements CacheAdapter {
                     return false;
                 }
             } catch (Exception e) {
-                log.error("Error in putIfAbsent with TTL for cache '{}' and key '{}': {}", 
+                log.error("Error in putIfAbsent with TTL for cache '{}' and key '{}': {}",
                          cacheName, key, e.getMessage(), e);
                 throw new RuntimeException("Failed to put value if absent with TTL", e);
             }
@@ -231,13 +241,14 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K> Mono<Boolean> evict(K key) {
         return Mono.fromCallable(() -> {
             try {
-                boolean existed = cache.getIfPresent(key) != null || expirationTimes.containsKey(key);
-                cache.invalidate(key);
-                expirationTimes.remove(key);
+                String prefixedKey = addKeyPrefix(key);
+                boolean existed = cache.getIfPresent(prefixedKey) != null || expirationTimes.containsKey(prefixedKey);
+                cache.invalidate(prefixedKey);
+                expirationTimes.remove(prefixedKey);
                 log.debug("Evicted key '{}' from cache '{}': {}", key, cacheName, existed);
                 return existed;
             } catch (Exception e) {
-                log.error("Error evicting key '{}' from cache '{}': {}", 
+                log.error("Error evicting key '{}' from cache '{}': {}",
                          key, cacheName, e.getMessage(), e);
                 throw new RuntimeException("Failed to evict key from cache", e);
             }
@@ -262,17 +273,19 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K> Mono<Boolean> exists(K key) {
         return Mono.fromCallable(() -> {
             try {
+                String prefixedKey = addKeyPrefix(key);
+
                 // Check custom TTL expiration first
-                Instant expiration = expirationTimes.get(key);
+                Instant expiration = expirationTimes.get(prefixedKey);
                 if (expiration != null && Instant.now().isAfter(expiration)) {
-                    cache.invalidate(key);
-                    expirationTimes.remove(key);
+                    cache.invalidate(prefixedKey);
+                    expirationTimes.remove(prefixedKey);
                     return false;
                 }
 
-                return cache.getIfPresent(key) != null;
+                return cache.getIfPresent(prefixedKey) != null;
             } catch (Exception e) {
-                log.warn("Error checking existence of key '{}' in cache '{}': {}", 
+                log.warn("Error checking existence of key '{}' in cache '{}': {}",
                         key, cacheName, e.getMessage());
                 return false;
             }
@@ -286,7 +299,13 @@ public class CaffeineCacheAdapter implements CacheAdapter {
             try {
                 // Clean up expired keys first
                 cleanupExpiredKeys();
-                return (Set<K>) cache.asMap().keySet();
+
+                // Remove prefix from all keys before returning
+                Set<K> unprefixedKeys = cache.asMap().keySet().stream()
+                        .map(key -> (K) removeKeyPrefix(key.toString()))
+                        .collect(java.util.stream.Collectors.toSet());
+
+                return unprefixedKeys;
             } catch (Exception e) {
                 log.error("Error getting keys from cache '{}': {}", cacheName, e.getMessage(), e);
                 throw new RuntimeException("Failed to get cache keys", e);
@@ -410,5 +429,35 @@ public class CaffeineCacheAdapter implements CacheAdapter {
      */
     public CaffeineCacheConfig getConfig() {
         return config;
+    }
+
+    /**
+     * Adds the key prefix to the given key.
+     *
+     * @param key the original key
+     * @return the prefixed key
+     */
+    private String addKeyPrefix(Object key) {
+        if (keyPrefix == null || keyPrefix.isEmpty()) {
+            return key.toString();
+        }
+        return keyPrefix + ":" + key;
+    }
+
+    /**
+     * Removes the key prefix from the given key.
+     *
+     * @param prefixedKey the prefixed key
+     * @return the original key
+     */
+    private String removeKeyPrefix(String prefixedKey) {
+        if (keyPrefix == null || keyPrefix.isEmpty()) {
+            return prefixedKey;
+        }
+        String prefix = keyPrefix + ":";
+        if (prefixedKey.startsWith(prefix)) {
+            return prefixedKey.substring(prefix.length());
+        }
+        return prefixedKey;
     }
 }
