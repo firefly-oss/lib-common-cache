@@ -58,11 +58,18 @@ public class CaffeineCacheAdapter implements CacheAdapter {
 
     public CaffeineCacheAdapter(String cacheName, CaffeineCacheConfig config) {
         this.cacheName = cacheName;
-        this.keyPrefix = config.getKeyPrefix();
+        this.keyPrefix = buildKeyPrefix(cacheName, config.getKeyPrefix());
         this.config = config;
         this.expirationTimes = new ConcurrentHashMap<>();
         this.cache = buildCache(config);
         log.info("Created Caffeine cache adapter '{}' with config: {}", cacheName, config);
+    }
+
+    private String buildKeyPrefix(String cacheName, String configPrefix) {
+        if (configPrefix != null && !configPrefix.trim().isEmpty()) {
+            return configPrefix + ":" + cacheName + ":";
+        }
+        return "cache:" + cacheName + ":";
     }
 
     private Cache<Object, Object> buildCache(CaffeineCacheConfig config) {
@@ -110,7 +117,7 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K, V> Mono<Optional<V>> get(K key) {
         return Mono.fromCallable(() -> {
             try {
-                String prefixedKey = addKeyPrefix(key);
+                String prefixedKey = buildKey(key);
 
                 // Check custom TTL expiration first
                 Instant expiration = expirationTimes.get(prefixedKey);
@@ -142,7 +149,7 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K, V> Mono<Void> put(K key, V value) {
         return Mono.fromRunnable(() -> {
             try {
-                String prefixedKey = addKeyPrefix(key);
+                String prefixedKey = buildKey(key);
                 cache.put(prefixedKey, value);
                 // Remove any custom expiration time
                 expirationTimes.remove(prefixedKey);
@@ -159,7 +166,7 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K, V> Mono<Void> put(K key, V value, Duration ttl) {
         return Mono.fromRunnable(() -> {
             try {
-                String prefixedKey = addKeyPrefix(key);
+                String prefixedKey = buildKey(key);
                 cache.put(prefixedKey, value);
                 // Track custom expiration time
                 expirationTimes.put(prefixedKey, Instant.now().plus(ttl));
@@ -177,7 +184,7 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K, V> Mono<Boolean> putIfAbsent(K key, V value) {
         return Mono.fromCallable(() -> {
             try {
-                String prefixedKey = addKeyPrefix(key);
+                String prefixedKey = buildKey(key);
 
                 // Check if key exists (considering custom TTL)
                 Instant expiration = expirationTimes.get(prefixedKey);
@@ -209,7 +216,7 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K, V> Mono<Boolean> putIfAbsent(K key, V value, Duration ttl) {
         return Mono.fromCallable(() -> {
             try {
-                String prefixedKey = addKeyPrefix(key);
+                String prefixedKey = buildKey(key);
 
                 // Check if key exists (considering custom TTL)
                 Instant expiration = expirationTimes.get(prefixedKey);
@@ -241,7 +248,7 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K> Mono<Boolean> evict(K key) {
         return Mono.fromCallable(() -> {
             try {
-                String prefixedKey = addKeyPrefix(key);
+                String prefixedKey = buildKey(key);
                 boolean existed = cache.getIfPresent(prefixedKey) != null || expirationTimes.containsKey(prefixedKey);
                 cache.invalidate(prefixedKey);
                 expirationTimes.remove(prefixedKey);
@@ -273,7 +280,7 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     public <K> Mono<Boolean> exists(K key) {
         return Mono.fromCallable(() -> {
             try {
-                String prefixedKey = addKeyPrefix(key);
+                String prefixedKey = buildKey(key);
 
                 // Check custom TTL expiration first
                 Instant expiration = expirationTimes.get(prefixedKey);
@@ -302,7 +309,7 @@ public class CaffeineCacheAdapter implements CacheAdapter {
 
                 // Remove prefix from all keys before returning
                 Set<K> unprefixedKeys = cache.asMap().keySet().stream()
-                        .map(key -> (K) removeKeyPrefix(key.toString()))
+                        .map(key -> (K) extractOriginalKey(key.toString()))
                         .collect(java.util.stream.Collectors.toSet());
 
                 return unprefixedKeys;
@@ -432,32 +439,26 @@ public class CaffeineCacheAdapter implements CacheAdapter {
     }
 
     /**
-     * Adds the key prefix to the given key.
+     * Builds the full cache key by adding the prefix.
+     * Format: keyPrefix + key (where keyPrefix already includes cacheName)
      *
      * @param key the original key
-     * @return the prefixed key
+     * @return the full cache key
      */
-    private String addKeyPrefix(Object key) {
-        if (keyPrefix == null || keyPrefix.isEmpty()) {
-            return key.toString();
-        }
-        return keyPrefix + ":" + key;
+    private String buildKey(Object key) {
+        return keyPrefix + key.toString();
     }
 
     /**
-     * Removes the key prefix from the given key.
+     * Extracts the original key from a cache key by removing the prefix.
      *
-     * @param prefixedKey the prefixed key
+     * @param cacheKey the full cache key
      * @return the original key
      */
-    private String removeKeyPrefix(String prefixedKey) {
-        if (keyPrefix == null || keyPrefix.isEmpty()) {
-            return prefixedKey;
+    private String extractOriginalKey(String cacheKey) {
+        if (cacheKey.startsWith(keyPrefix)) {
+            return cacheKey.substring(keyPrefix.length());
         }
-        String prefix = keyPrefix + ":";
-        if (prefixedKey.startsWith(prefix)) {
-            return prefixedKey.substring(prefix.length());
-        }
-        return prefixedKey;
+        return cacheKey;
     }
 }
