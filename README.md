@@ -99,27 +99,26 @@ Customize the cache behavior via `application.yml`:
 firefly:
   cache:
     enabled: true
-    default-cache-type: CAFFEINE  # Options: CAFFEINE, REDIS, AUTO, NOOP
-    default-cache-name: default
+    default-cache-type: CAFFEINE  # Options: CAFFEINE, REDIS, AUTO
     metrics-enabled: true
     health-enabled: true
 
     # Caffeine configuration
     caffeine:
-      default:
-        enabled: true
-        maximum-size: 1000
-        expire-after-write: PT1H
-        record-stats: true
+      cache-name: default
+      enabled: true
+      maximum-size: 1000
+      expire-after-write: PT1H
+      record-stats: true
 
-    # Redis configuration (optional)
+    # Redis configuration (optional - only used if Redis dependencies are present)
     redis:
-      default:
-        enabled: true
-        host: localhost
-        port: 6379
-        database: 0
-        key-prefix: "firefly:cache"
+      cache-name: default
+      enabled: true
+      host: localhost
+      port: 6379
+      database: 0
+      key-prefix: "firefly:cache"
 ```
 
 ## 💻 Usage
