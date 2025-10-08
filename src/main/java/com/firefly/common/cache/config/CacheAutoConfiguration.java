@@ -21,8 +21,6 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.firefly.common.cache.adapter.caffeine.CaffeineCacheAdapter;
 import com.firefly.common.cache.adapter.caffeine.CaffeineCacheConfig;
 import com.firefly.common.cache.core.CacheAdapter;
-import com.firefly.common.cache.manager.AutoCacheSelectionStrategy;
-import com.firefly.common.cache.manager.CacheSelectionStrategy;
 import com.firefly.common.cache.manager.FireflyCacheManager;
 import com.firefly.common.cache.properties.CacheProperties;
 import com.firefly.common.cache.serialization.CacheSerializer;
@@ -95,38 +93,55 @@ public class CacheAutoConfiguration {
     }
 
     /**
-     * Provides a default cache selection strategy.
-     */
-    @Bean
-    @ConditionalOnMissingBean
-    public CacheSelectionStrategy cacheSelectionStrategy() {
-        log.debug("Creating auto cache selection strategy");
-        return new AutoCacheSelectionStrategy();
-    }
-
-    /**
      * Creates the main Firefly cache manager.
+     * <p>
+     * The manager will use the configured cache adapter as primary,
+     * and optionally a second one as fallback (e.g., Redis primary, Caffeine fallback).
      */
     @Bean
     @Primary
-    public FireflyCacheManager fireflyCacheManager(CacheSelectionStrategy selectionStrategy,
-                                                   CacheProperties properties,
+    public FireflyCacheManager fireflyCacheManager(CacheProperties properties,
                                                    java.util.List<CacheAdapter> cacheAdapters) {
         log.info("Creating Firefly Cache Manager");
-        log.info("   • Default cache name: {}", properties.getDefaultCacheName());
-        log.info("   • Default cache type: {}", properties.getDefaultCacheType());
+        log.info("   • Preferred cache type: {}", properties.getDefaultCacheType());
+        log.info("   • Available cache adapters: {}", cacheAdapters.size());
 
-        FireflyCacheManager manager = new FireflyCacheManager(selectionStrategy, properties.getDefaultCacheName());
-
-        // Register all discovered cache adapters
-        for (CacheAdapter adapter : cacheAdapters) {
-            log.info("   • Registering cache adapter: {} (type: {})",
-                adapter.getCacheName(), adapter.getCacheType());
-            manager.registerCache(adapter.getCacheName(), adapter);
+        if (cacheAdapters.isEmpty()) {
+            throw new IllegalStateException("No cache adapters available. At least Caffeine should be configured.");
         }
 
-        log.info("Firefly Cache Manager initialized with {} cache adapter(s)", cacheAdapters.size());
-        return manager;
+        // Select primary and fallback caches based on type preference
+        CacheAdapter primaryCache = null;
+        CacheAdapter fallbackCache = null;
+
+        // Prefer Redis as primary if available and configured
+        if (properties.getDefaultCacheType() == com.firefly.common.cache.core.CacheType.REDIS) {
+            primaryCache = cacheAdapters.stream()
+                    .filter(adapter -> adapter.getCacheType() == com.firefly.common.cache.core.CacheType.REDIS)
+                    .findFirst()
+                    .orElse(null);
+
+            // Use Caffeine as fallback
+            fallbackCache = cacheAdapters.stream()
+                    .filter(adapter -> adapter.getCacheType() == com.firefly.common.cache.core.CacheType.CAFFEINE)
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        // If no Redis or preference is Caffeine, use Caffeine as primary
+        if (primaryCache == null) {
+            primaryCache = cacheAdapters.stream()
+                    .filter(adapter -> adapter.getCacheType() == com.firefly.common.cache.core.CacheType.CAFFEINE)
+                    .findFirst()
+                    .orElse(cacheAdapters.get(0)); // Fallback to first available
+        }
+
+        log.info("   • Primary cache: {} ({})", primaryCache.getCacheName(), primaryCache.getCacheType());
+        if (fallbackCache != null) {
+            log.info("   • Fallback cache: {} ({})", fallbackCache.getCacheName(), fallbackCache.getCacheType());
+        }
+
+        return new FireflyCacheManager(primaryCache, fallbackCache);
     }
 
     // ================================

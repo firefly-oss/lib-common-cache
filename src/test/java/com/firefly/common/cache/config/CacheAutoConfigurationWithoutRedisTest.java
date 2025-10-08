@@ -59,13 +59,13 @@ class CacheAutoConfigurationWithoutRedisTest {
     void shouldOnlyCreateCaffeineCacheWhenRedisNotAvailable() {
         this.contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
-            
-            // Should have Caffeine cache adapter
-            assertThat(context).hasSingleBean(CacheAdapter.class);
-            
-            CacheAdapter adapter = context.getBean(CacheAdapter.class);
-            assertThat(adapter.getCacheType()).isEqualTo(CacheType.CAFFEINE);
-            assertThat(adapter.getCacheName()).isEqualTo("default");
+
+            // Should have FireflyCacheManager
+            assertThat(context).hasSingleBean(FireflyCacheManager.class);
+
+            FireflyCacheManager manager = context.getBean(FireflyCacheManager.class);
+            assertThat(manager.getCacheType()).isEqualTo(CacheType.CAFFEINE);
+            assertThat(manager.getCacheName()).isEqualTo("default");
         });
     }
 
@@ -91,10 +91,9 @@ class CacheAutoConfigurationWithoutRedisTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(FireflyCacheManager.class);
-                    assertThat(context).hasSingleBean(CacheAdapter.class);
-                    
-                    CacheAdapter adapter = context.getBean(CacheAdapter.class);
-                    assertThat(adapter.getCacheType()).isEqualTo(CacheType.CAFFEINE);
+
+                    FireflyCacheManager manager = context.getBean(FireflyCacheManager.class);
+                    assertThat(manager.getCacheType()).isEqualTo(CacheType.CAFFEINE);
                 });
     }
 
@@ -115,11 +114,8 @@ class CacheAutoConfigurationWithoutRedisTest {
         this.contextRunner
                 .withPropertyValues("firefly.cache.caffeine.default.enabled=false")
                 .run(context -> {
-                    assertThat(context).hasNotFailed();
-                    
-                    // Should have cache manager but no cache adapters
-                    assertThat(context).hasSingleBean(FireflyCacheManager.class);
-                    assertThat(context).doesNotHaveBean(CacheAdapter.class);
+                    // Should fail because no cache adapters are available
+                    assertThat(context).hasFailed();
                 });
     }
 
@@ -129,10 +125,10 @@ class CacheAutoConfigurationWithoutRedisTest {
                 .withPropertyValues("firefly.cache.default-cache-name=my-custom-cache")
                 .run(context -> {
                     assertThat(context).hasNotFailed();
-                    
+
                     FireflyCacheManager manager = context.getBean(FireflyCacheManager.class);
                     assertThat(manager).isNotNull();
-                    // The default cache name is used by the manager
+                    // The cache name comes from the underlying adapter
                 });
     }
 
@@ -149,14 +145,6 @@ class CacheAutoConfigurationWithoutRedisTest {
         this.contextRunner.run(context -> {
             assertThat(context).hasNotFailed();
             assertThat(context).hasBean("cacheObjectMapper");
-        });
-    }
-
-    @Test
-    void shouldCreateCacheSelectionStrategyBean() {
-        this.contextRunner.run(context -> {
-            assertThat(context).hasNotFailed();
-            assertThat(context).hasBean("cacheSelectionStrategy");
         });
     }
 }

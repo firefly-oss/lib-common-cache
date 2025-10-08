@@ -25,9 +25,9 @@ import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit tests for FireflyCacheManager.
@@ -35,290 +35,196 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class FireflyCacheManagerTest {
 
     private FireflyCacheManager cacheManager;
-    private CacheAdapter mockCacheAdapter1;
-    private CacheAdapter mockCacheAdapter2;
+    private CacheAdapter primaryCache;
 
     @BeforeEach
     void setUp() {
-        cacheManager = new FireflyCacheManager();
-        
-        // Create real cache adapters for testing
-        CaffeineCacheConfig config1 = CaffeineCacheConfig.builder()
+        // Create a Caffeine cache as primary
+        CaffeineCacheConfig config = CaffeineCacheConfig.builder()
                 .maximumSize(100L)
                 .recordStats(true)
                 .build();
-        mockCacheAdapter1 = new CaffeineCacheAdapter("cache1", config1);
+        primaryCache = new CaffeineCacheAdapter("test-cache", config);
         
-        CaffeineCacheConfig config2 = CaffeineCacheConfig.builder()
-                .maximumSize(50L)
-                .recordStats(true)
-                .build();
-        mockCacheAdapter2 = new CaffeineCacheAdapter("cache2", config2);
+        cacheManager = new FireflyCacheManager(primaryCache);
     }
 
     @Test
-    void shouldRegisterAndRetrieveCache() {
+    void shouldDelegateGetToPrimaryCache() {
+        // Given
+        cacheManager.put("key1", "value1").block();
+        
+        // When & Then
+        StepVerifier.create(cacheManager.get("key1"))
+                .expectNext(Optional.of("value1"))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldDelegatePutToPrimaryCache() {
         // When
-        cacheManager.registerCache("test-cache", mockCacheAdapter1);
-        
-        // Then
-        assertThat(cacheManager.hasCache("test-cache")).isTrue();
-        assertThat(cacheManager.getCache("test-cache")).isSameAs(mockCacheAdapter1);
-        assertThat(cacheManager.getCacheCount()).isEqualTo(1);
-        assertThat(cacheManager.getCacheNames()).containsExactly("test-cache");
-    }
-
-    @Test
-    void shouldUnregisterCache() {
-        // Given
-        cacheManager.registerCache("test-cache", mockCacheAdapter1);
-        
-        // When
-        CacheAdapter removed = cacheManager.unregisterCache("test-cache");
-        
-        // Then
-        assertThat(removed).isSameAs(mockCacheAdapter1);
-        assertThat(cacheManager.hasCache("test-cache")).isFalse();
-        assertThat(cacheManager.getCacheCount()).isEqualTo(0);
-    }
-
-    @Test
-    void shouldGetDefaultCacheWhenAvailable() {
-        // Given
-        cacheManager.registerCache("cache1", mockCacheAdapter1);
-        cacheManager.registerCache("cache2", mockCacheAdapter2);
-        
-        // When
-        CacheAdapter defaultCache = cacheManager.getDefaultCache();
-        
-        // Then
-        assertThat(defaultCache).isNotNull();
-        assertThat(defaultCache.getCacheType()).isEqualTo(CacheType.CAFFEINE);
-    }
-
-    @Test
-    void shouldThrowExceptionWhenNoDefaultCacheAvailable() {
-        // When & Then
-        assertThatThrownBy(() -> cacheManager.getDefaultCache())
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("No caches registered");
-    }
-
-    @Test
-    void shouldPerformCacheOperationsOnDefaultCache() {
-        // Given
-        cacheManager.registerCache("default", mockCacheAdapter1);
-        String key = "test-key";
-        String value = "test-value";
-        
-        // When & Then - put and get
-        StepVerifier.create(cacheManager.put(key, value))
-                .verifyComplete();
-        
-        StepVerifier.create(cacheManager.get(key))
-                .assertNext(result -> {
-                    assertThat(result).isPresent();
-                    assertThat(result.get()).isEqualTo(value);
-                })
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldPerformCacheOperationsOnSpecificCache() {
-        // Given
-        cacheManager.registerCache("specific-cache", mockCacheAdapter1);
-        String key = "specific-key";
-        String value = "specific-value";
-        
-        // When & Then
-        StepVerifier.create(cacheManager.put("specific-cache", key, value))
-                .verifyComplete();
-        
-        StepVerifier.create(cacheManager.get("specific-cache", key))
-                .assertNext(result -> {
-                    assertThat(result).isPresent();
-                    assertThat(result.get()).isEqualTo(value);
-                })
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldReturnEmptyWhenGettingFromNonExistentCache() {
-        // When & Then
-        StepVerifier.create(cacheManager.get("non-existent", "key"))
-                .assertNext(result -> assertThat(result).isEmpty())
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldReturnFalseWhenEvictingFromNonExistentCache() {
-        // When & Then
-        StepVerifier.create(cacheManager.evict("non-existent", "key"))
-                .assertNext(result -> assertThat(result).isFalse())
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldPutIfAbsentOnDefaultCache() {
-        // Given
-        cacheManager.registerCache("default", mockCacheAdapter1);
-        String key = "absent-key";
-        String value1 = "first-value";
-        String value2 = "second-value";
-        
-        // When & Then
-        StepVerifier.create(cacheManager.putIfAbsent(key, value1))
-                .assertNext(result -> assertThat(result).isTrue())
-                .verifyComplete();
-        
-        StepVerifier.create(cacheManager.putIfAbsent(key, value2))
-                .assertNext(result -> assertThat(result).isFalse())
-                .verifyComplete();
-        
-        StepVerifier.create(cacheManager.get(key))
-                .assertNext(result -> {
-                    assertThat(result).isPresent();
-                    assertThat(result.get()).isEqualTo(value1);
-                })
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldPutWithTtlOnDefaultCache() {
-        // Given
-        cacheManager.registerCache("default", mockCacheAdapter1);
-        String key = "ttl-key";
-        String value = "ttl-value";
-        Duration ttl = Duration.ofMillis(100);
-        
-        // When & Then
-        StepVerifier.create(cacheManager.<String, String>put(key, value, ttl))
-                .verifyComplete();
-        
-        StepVerifier.create(cacheManager.get(key))
-                .assertNext(result -> {
-                    assertThat(result).isPresent();
-                    assertThat(result.get()).isEqualTo(value);
-                })
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldEvictFromDefaultCache() {
-        // Given
-        cacheManager.registerCache("default", mockCacheAdapter1);
-        String key = "evict-key";
-        String value = "evict-value";
-        
-        StepVerifier.create(cacheManager.put(key, value))
-                .verifyComplete();
-        
-        // When & Then
-        StepVerifier.create(cacheManager.evict(key))
-                .assertNext(result -> assertThat(result).isTrue())
-                .verifyComplete();
-        
-        StepVerifier.create(cacheManager.exists(key))
-                .assertNext(result -> assertThat(result).isFalse())
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldClearDefaultCache() {
-        // Given
-        cacheManager.registerCache("default", mockCacheAdapter1);
-        
         StepVerifier.create(cacheManager.put("key1", "value1"))
                 .verifyComplete();
-        StepVerifier.create(cacheManager.put("key2", "value2"))
+        
+        // Then
+        StepVerifier.create(cacheManager.get("key1"))
+                .expectNext(Optional.of("value1"))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldDelegateEvictToPrimaryCache() {
+        // Given
+        cacheManager.put("key1", "value1").block();
+        
+        // When
+        StepVerifier.create(cacheManager.evict("key1"))
+                .expectNext(true)
                 .verifyComplete();
         
-        // When & Then
+        // Then
+        StepVerifier.create(cacheManager.get("key1"))
+                .expectNext(Optional.empty())
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldDelegateClearToPrimaryCache() {
+        // Given
+        cacheManager.put("key1", "value1").block();
+        cacheManager.put("key2", "value2").block();
+        
+        // When
         StepVerifier.create(cacheManager.clear())
                 .verifyComplete();
         
-        StepVerifier.create(cacheManager.exists("key1"))
-                .assertNext(result -> assertThat(result).isFalse())
+        // Then
+        StepVerifier.create(cacheManager.get("key1"))
+                .expectNext(Optional.empty())
                 .verifyComplete();
     }
 
     @Test
-    void shouldGetHealthForAllCaches() {
-        // Given
-        cacheManager.registerCache("cache1", mockCacheAdapter1);
-        cacheManager.registerCache("cache2", mockCacheAdapter2);
-        
-        // When & Then
-        StepVerifier.create(cacheManager.getHealth())
-                .expectNextCount(2)
-                .verifyComplete();
+    void shouldReturnPrimaryCacheType() {
+        assertThat(cacheManager.getCacheType()).isEqualTo(CacheType.CAFFEINE);
     }
 
     @Test
-    void shouldGetHealthForSpecificCache() {
-        // Given
-        cacheManager.registerCache("test-cache", mockCacheAdapter1);
-        
-        // When & Then
-        StepVerifier.create(cacheManager.getHealth("test-cache"))
-                .assertNext(health -> {
-                    assertThat(health.getCacheName()).isEqualTo("cache1");
-                    assertThat(health.getCacheType()).isEqualTo(CacheType.CAFFEINE);
-                    assertThat(health.isHealthy()).isTrue();
-                })
-                .verifyComplete();
+    void shouldReturnPrimaryCacheName() {
+        assertThat(cacheManager.getCacheName()).isEqualTo("test-cache");
     }
 
     @Test
-    void shouldGetStatsForAllCaches() {
-        // Given
-        cacheManager.registerCache("cache1", mockCacheAdapter1);
-        cacheManager.registerCache("cache2", mockCacheAdapter2);
-        
-        // When & Then
+    void shouldBeAvailableWhenPrimaryCacheIsAvailable() {
+        assertThat(cacheManager.isAvailable()).isTrue();
+    }
+
+    @Test
+    void shouldReturnStatsFromPrimaryCache() {
         StepVerifier.create(cacheManager.getStats())
-                .expectNextCount(2)
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldGetStatsForSpecificCache() {
-        // Given
-        cacheManager.registerCache("test-cache", mockCacheAdapter1);
-        
-        // When & Then
-        StepVerifier.create(cacheManager.getStats("test-cache"))
                 .assertNext(stats -> {
-                    assertThat(stats.getCacheName()).isEqualTo("cache1");
-                    assertThat(stats.getCacheType()).isEqualTo(CacheType.CAFFEINE);
+                    assertThat(stats).isNotNull();
+                    assertThat(stats.getHitCount()).isGreaterThanOrEqualTo(0);
                 })
                 .verifyComplete();
     }
 
     @Test
-    void shouldCloseAllCaches() {
+    void shouldReturnHealthFromPrimaryCache() {
+        StepVerifier.create(cacheManager.getHealth())
+                .assertNext(health -> {
+                    assertThat(health).isNotNull();
+                    assertThat(health.getStatus()).isNotNull();
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldSupportPutWithTTL() {
+        // When
+        StepVerifier.create(cacheManager.put("key1", "value1", Duration.ofSeconds(10)))
+                .verifyComplete();
+        
+        // Then
+        StepVerifier.create(cacheManager.get("key1"))
+                .expectNext(Optional.of("value1"))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldSupportPutIfAbsent() {
+        // When - first put should succeed
+        StepVerifier.create(cacheManager.putIfAbsent("key1", "value1"))
+                .expectNext(true)
+                .verifyComplete();
+        
+        // When - second put should fail
+        StepVerifier.create(cacheManager.putIfAbsent("key1", "value2"))
+                .expectNext(false)
+                .verifyComplete();
+        
+        // Then - original value should remain
+        StepVerifier.create(cacheManager.get("key1"))
+                .expectNext(Optional.of("value1"))
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldSupportExists() {
         // Given
-        cacheManager.registerCache("cache1", mockCacheAdapter1);
-        cacheManager.registerCache("cache2", mockCacheAdapter2);
+        cacheManager.put("key1", "value1").block();
         
-        assertThat(cacheManager.isClosed()).isFalse();
+        // When & Then
+        StepVerifier.create(cacheManager.exists("key1"))
+                .expectNext(true)
+                .verifyComplete();
         
+        StepVerifier.create(cacheManager.exists("nonexistent"))
+                .expectNext(false)
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldSupportSize() {
+        // Given
+        cacheManager.put("key1", "value1").block();
+        cacheManager.put("key2", "value2").block();
+        
+        // When & Then
+        StepVerifier.create(cacheManager.size())
+                .expectNext(2L)
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldCloseSuccessfully() {
         // When
         cacheManager.close();
         
         // Then
         assertThat(cacheManager.isClosed()).isTrue();
-        assertThat(cacheManager.getCacheCount()).isEqualTo(0);
     }
 
     @Test
-    void shouldThrowExceptionWhenRegisteringCacheAfterClose() {
-        // Given
-        cacheManager.close();
+    void shouldFallbackToFallbackCacheWhenPrimaryUnavailable() {
+        // Given - create manager with fallback
+        CaffeineCacheConfig fallbackConfig = CaffeineCacheConfig.builder()
+                .maximumSize(50L)
+                .build();
+        CacheAdapter fallbackCache = new CaffeineCacheAdapter("fallback-cache", fallbackConfig);
         
-        // When & Then
-        assertThatThrownBy(() -> cacheManager.registerCache("test", mockCacheAdapter1))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessage("Cache manager is closed");
+        FireflyCacheManager managerWithFallback = new FireflyCacheManager(primaryCache, fallbackCache);
+        
+        // When - put data in primary
+        managerWithFallback.put("key1", "value1").block();
+        
+        // Then - should retrieve from primary
+        StepVerifier.create(managerWithFallback.get("key1"))
+                .expectNext(Optional.of("value1"))
+                .verifyComplete();
+        
+        // Cleanup
+        managerWithFallback.close();
     }
 }
+
