@@ -1,425 +1,285 @@
-# Architecture Guide
-
-This document explains the architecture and design principles of the Firefly Common Cache Library.
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Hexagonal Architecture](#hexagonal-architecture)
-- [Core Components](#core-components)
-- [Package Structure](#package-structure)
-- [Design Patterns](#design-patterns)
-- [Data Flow](#data-flow)
-- [Extension Points](#extension-points)
+# Firefly Common Cache - Architecture Guide
 
 ## Overview
 
-The Firefly Common Cache Library is built following **Hexagonal Architecture** (also known as Ports and Adapters) principles. This architectural style ensures:
+This document explains the architecture of the Firefly Common Cache library and how to properly use it in your Spring Boot applications.
 
-- **Separation of Concerns**: Business logic is isolated from infrastructure
-- **Testability**: Core logic can be tested without external dependencies
-- **Flexibility**: Easy to swap cache implementations
-- **Maintainability**: Clear boundaries between components
+## Hexagonal Architecture (Ports and Adapters)
 
-## Hexagonal Architecture
+The library follows hexagonal architecture principles with a clear separation between:
 
-### Architecture Diagram
+### Core Domain (Ports)
+- **`CacheAdapter`**: Internal reactive interface for cache operations
+- **`FireflyCacheManager`**: Public API for managing multiple cache instances
+- **`CacheSelectionStrategy`**: Strategy for selecting the appropriate cache
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                        Application Core                          │
-│                                                                  │
-│   ┌──────────────────────────────────────────────────────────┐   │
-│   │              FireflyCacheManager                         │   │
-│   │  - Orchestrates cache operations                         │   │
-│   │  - Manages multiple cache instances                      │   │
-│   │  - Provides unified API                                  │   │
-│   └──────────────────────────────────────────────────────────┘   │
-│                                │                                 │
-│                                ▼                                 │
-│   ┌──────────────────────────────────────────────────────────┐   │
-│   │         CacheAdapter (Port Interface)                    │   │
-│   │  - Defines cache operations contract                     │   │
-│   │  - Reactive API (Mono/Flux)                              │   │
-│   │  - Type-safe operations                                  │   │
-│   └──────────────────────────────────────────────────────────┘   │
-│                                                                  │
-└────────────────────────────────┬─────────────────────────────────┘
-                                 │
-              ┌──────────────────┼──────────────────┐
-              ▼                  ▼                  ▼
-       ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-       │   Caffeine   │   │    Redis     │   │    NoOp      │
-       │   Adapter    │   │   Adapter    │   │   Adapter    │
-       │              │   │              │   │              │
-       │ (In-Memory)  │   │(Distributed) │   │  (Fallback)  │
-       └──────────────┘   └──────────────┘   └──────────────┘
-             │                   │                   │
-             ▼                   ▼                   ▼
-       ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-       │   Caffeine   │   │    Redis     │   │     None     │
-       │   Library    │   │   (Lettuce)  │   │              │
-       └──────────────┘   └──────────────┘   └──────────────┘
-```
+### Adapters (Implementations)
+- **`CaffeineCacheAdapter`**: In-memory cache implementation (always available)
+- **`RedisCacheAdapter`**: Distributed cache implementation (optional)
 
-### Layers
+## Public API
 
-1. **Application Core** (Domain Layer)
-   - Contains business logic and domain models
-   - Independent of infrastructure concerns
-   - Defines ports (interfaces) for external interactions
-
-2. **Ports** (Interfaces)
-   - `CacheAdapter`: Primary port for cache operations
-   - `CacheSelectionStrategy`: Strategy for selecting cache instances
-   - `CacheSerializer`: Serialization abstraction
-
-3. **Adapters** (Infrastructure Layer)
-   - `CaffeineCacheAdapter`: In-memory cache implementation
-   - `RedisCacheAdapter`: Distributed cache implementation
-   - `NoOpCacheAdapter`: Null object pattern for disabled caching
-
-## Core Components
-
-### 1. FireflyCacheManager
-
-**Location**: `com.firefly.common.cache.manager.FireflyCacheManager`
-
-**Responsibilities**:
-- Manages multiple cache instances
-- Provides unified API for cache operations
-- Delegates to appropriate cache adapter
-- Aggregates health and statistics
-
-**Key Methods**:
-```java
-// Default cache operations
-<K, V> Mono<Optional<V>> get(K key, Class<V> valueType)
-<K, V> Mono<Void> put(K key, V value, Duration ttl)
-<K> Mono<Boolean> evict(K key)
-
-// Named cache operations
-<K, V> Mono<Optional<V>> get(String cacheName, K key)
-<K, V> Mono<Void> put(String cacheName, K key, V value)
-
-// Management
-void registerCache(String name, CacheAdapter adapter)
-CacheAdapter getCache(String name)
-```
-
-### 2. CacheAdapter (Port)
-
-**Location**: `com.firefly.common.cache.core.CacheAdapter`
-
-**Purpose**: Defines the contract for all cache implementations
-
-**Key Operations**:
-- `get(K key)`: Retrieve value
-- `put(K key, V value, Duration ttl)`: Store value with TTL
-- `putIfAbsent(K key, V value)`: Conditional store
-- `evict(K key)`: Remove entry
-- `clear()`: Remove all entries
-- `exists(K key)`: Check existence
-- `keys()`: Get all keys
-- `getStats()`: Get statistics
-- `getHealth()`: Get health status
-
-### 3. Cache Adapters (Implementations)
-
-#### CaffeineCacheAdapter
-
-**Location**: `com.firefly.common.cache.adapter.caffeine.CaffeineCacheAdapter`
-
-**Characteristics**:
-- In-memory cache using Caffeine library
-- High performance, low latency
-- Size-based and time-based eviction
-- Statistics tracking
-- Not distributed (local to JVM)
-
-**Configuration**: `CaffeineCacheConfig`
-- Maximum size
-- Expire after write/access
-- Refresh after write
-- Weak/soft references
-
-#### RedisCacheAdapter
-
-**Location**: `com.firefly.common.cache.adapter.redis.RedisCacheAdapter`
-
-**Characteristics**:
-- Distributed cache using Redis
-- Persistence support
-- Pub/sub capabilities
-- Cluster support
-- Higher latency than in-memory
-
-**Configuration**: `RedisCacheConfig`
-- Connection settings (host, port, database)
-- Authentication (username, password)
-- Timeouts
-- Pool settings
-- SSL support
-
-### 4. CacheSelectionStrategy
-
-**Location**: `com.firefly.common.cache.manager.CacheSelectionStrategy`
-
-**Purpose**: Determines which cache to use when multiple are available
-
-**Implementations**:
-- `AutoCacheSelectionStrategy`: Automatically selects based on availability and health
-
-### 5. CacheSerializer
-
-**Location**: `com.firefly.common.cache.serialization.CacheSerializer`
-
-**Purpose**: Handles object serialization/deserialization
-
-**Implementations**:
-- `JsonCacheSerializer`: JSON-based serialization using Jackson
-
-### 6. Configuration
-
-**Location**: `com.firefly.common.cache.properties.CacheProperties`
-
-**Purpose**: Centralized configuration properties
-
-**Structure**:
-```java
-CacheProperties
-├── enabled: boolean
-├── defaultCacheType: CacheType
-├── defaultCacheName: String
-├── metricsEnabled: boolean
-├── healthEnabled: boolean
-├── caches: Map<String, CacheConfig>
-├── caffeine: Map<String, CaffeineConfig>
-└── redis: Map<String, RedisConfig>
-```
-
-### 7. Auto-Configuration
-
-**Location**: `com.firefly.common.cache.config.CacheAutoConfiguration`
-
-**Purpose**: Spring Boot auto-configuration
-
-**Responsibilities**:
-- Registers cache adapters based on configuration
-- Creates FireflyCacheManager bean
-- Sets up serializers
-- Configures health indicators
-- Enables metrics collection
-
-## Package Structure
-
-```
-com.firefly.common.cache
-├── adapter/                    # Cache adapter implementations
-│   ├── caffeine/              # Caffeine adapter
-│   │   ├── CaffeineCacheAdapter.java
-│   │   └── CaffeineCacheConfig.java
-│   └── redis/                 # Redis adapter
-│       ├── RedisCacheAdapter.java
-│       └── RedisCacheConfig.java
-├── annotation/                # Cache annotations
-│   ├── Cacheable.java
-│   ├── CacheEvict.java
-│   ├── CachePut.java
-│   ├── Caching.java
-│   └── EnableCaching.java
-├── config/                    # Configuration classes
-│   └── CacheAutoConfiguration.java
-├── core/                      # Core interfaces and types
-│   ├── CacheAdapter.java      # Main port interface
-│   ├── CacheHealth.java
-│   ├── CacheStats.java
-│   └── CacheType.java
-├── exception/                 # Exception classes
-│   └── CacheException.java
-├── health/                    # Health indicators
-│   └── CacheHealthIndicator.java
-├── manager/                   # Cache manager
-│   ├── FireflyCacheManager.java
-│   ├── CacheSelectionStrategy.java
-│   └── AutoCacheSelectionStrategy.java
-├── metrics/                   # Metrics support
-│   └── CacheMetrics.java
-├── properties/                # Configuration properties
-│   └── CacheProperties.java
-└── serialization/             # Serialization
-    ├── CacheSerializer.java
-    ├── JsonCacheSerializer.java
-    └── SerializationException.java
-```
-
-## Design Patterns
-
-### 1. Hexagonal Architecture (Ports and Adapters)
-
-**Purpose**: Isolate business logic from infrastructure
-
-**Implementation**:
-- `CacheAdapter` is the port (interface)
-- `CaffeineCacheAdapter`, `RedisCacheAdapter` are adapters (implementations)
-
-### 2. Strategy Pattern
-
-**Purpose**: Select cache implementation at runtime
-
-**Implementation**:
-- `CacheSelectionStrategy` interface
-- `AutoCacheSelectionStrategy` implementation
-
-### 3. Facade Pattern
-
-**Purpose**: Provide simplified interface to complex subsystem
-
-**Implementation**:
-- `FireflyCacheManager` acts as facade over multiple cache adapters
-
-### 4. Builder Pattern
-
-**Purpose**: Construct complex configuration objects
-
-**Implementation**:
-- `CaffeineCacheConfig.builder()`
-- `RedisCacheConfig.builder()`
-
-### 5. Null Object Pattern
-
-**Purpose**: Provide default behavior when caching is disabled
-
-**Implementation**:
-- `NoOpCacheAdapter` (future implementation)
-
-## Data Flow
-
-### Cache Read Operation
-
-```
-User Code
-    │
-    ▼
-FireflyCacheManager.get(key)
-    │
-    ├─→ Select cache (via strategy)
-    │
-    ▼
-CacheAdapter.get(key)
-    │
-    ├─→ CaffeineCacheAdapter
-    │   └─→ Caffeine.getIfPresent(key)
-    │
-    └─→ RedisCacheAdapter
-        └─→ RedisTemplate.opsForValue().get(key)
-            └─→ Deserialize value
-```
-
-### Cache Write Operation
-
-```
-User Code
-    │
-    ▼
-FireflyCacheManager.put(key, value, ttl)
-    │
-    ├─→ Select cache (via strategy)
-    │
-    ▼
-CacheAdapter.put(key, value, ttl)
-    │
-    ├─→ CaffeineCacheAdapter
-    │   ├─→ Caffeine.put(key, value)
-    │   └─→ Track expiration time
-    │
-    └─→ RedisCacheAdapter
-        ├─→ Serialize value
-        └─→ RedisTemplate.opsForValue().set(key, value, ttl)
-```
-
-## Extension Points
-
-### Adding a New Cache Adapter
-
-1. Implement `CacheAdapter` interface
-2. Create configuration class
-3. Add auto-configuration bean
-4. Register with `FireflyCacheManager`
-
-Example:
+The main entry point for using the cache library is the `FireflyCacheManager` class:
 
 ```java
-public class MemcachedCacheAdapter implements CacheAdapter {
-    // Implement all methods
-}
+package com.firefly.common.cache.manager;
 
-@Configuration
-public class MemcachedAutoConfiguration {
-    @Bean
-    @ConditionalOnProperty("firefly.cache.memcached.enabled")
-    public MemcachedCacheAdapter memcachedCache() {
-        return new MemcachedCacheAdapter(config);
-    }
+public class FireflyCacheManager {
+    // Register a cache adapter
+    public void registerCache(String name, CacheAdapter adapter);
+    
+    // Unregister a cache adapter
+    public void unregisterCache(String name);
+    
+    // Select the best cache based on strategy
+    public CacheAdapter selectCache(String cacheName);
+    
+    // Get all registered cache names
+    public Collection<String> getCacheNames();
+    
+    // Get health information
+    public Mono<CacheHealth> getHealth();
+    
+    // Get aggregated statistics
+    public Mono<CacheStats> getStats();
+    
+    // Clear all caches
+    public void clearAll();
+    
+    // Close all caches
+    public void close();
 }
 ```
 
-### Custom Serialization
+## How to Use in Your Application
 
-Implement `CacheSerializer` interface:
+### 1. Add Dependency
+
+**For Caffeine only (in-memory cache):**
+```xml
+<dependency>
+    <groupId>com.firefly</groupId>
+    <artifactId>lib-common-cache</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</dependency>
+```
+
+**For Caffeine + Redis (distributed cache):**
+```xml
+<dependency>
+    <groupId>com.firefly</groupId>
+    <artifactId>lib-common-cache</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
+</dependency>
+<dependency>
+    <groupId>io.lettuce</groupId>
+    <artifactId>lettuce-core</artifactId>
+</dependency>
+```
+
+### 2. Inject FireflyCacheManager
 
 ```java
-public class ProtobufSerializer implements CacheSerializer {
-    @Override
-    public Object serialize(Object value) {
-        // Protobuf serialization
+import com.firefly.common.cache.manager.FireflyCacheManager;
+import org.springframework.stereotype.Service;
+
+@Service
+public class MyService {
+    
+    private final FireflyCacheManager cacheManager;
+    
+    public MyService(FireflyCacheManager cacheManager) {
+        this.cacheManager = cacheManager;
     }
     
-    @Override
-    public <T> T deserialize(Object data, Class<T> type) {
-        // Protobuf deserialization
+    public void doSomething() {
+        // Select the best cache
+        CacheAdapter cache = cacheManager.selectCache("default");
+        
+        // Use the cache
+        cache.put("key", "value").block();
+        Optional<String> value = cache.get("key", String.class).block();
     }
 }
 ```
 
-### Custom Selection Strategy
+### 3. Use @ConditionalOnBean for Optional Features
 
-Implement `CacheSelectionStrategy`:
+If you want to enable features only when the cache is available:
 
 ```java
-public class LoadBasedSelectionStrategy implements CacheSelectionStrategy {
-    @Override
-    public Optional<CacheAdapter> selectCache(Collection<CacheAdapter> caches) {
-        // Select based on load metrics
+import com.firefly.common.cache.manager.FireflyCacheManager;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class MyConfiguration {
+    
+    @Bean
+    @ConditionalOnBean(FireflyCacheManager.class)
+    public MyCachedService myCachedService(FireflyCacheManager cacheManager) {
+        return new MyCachedService(cacheManager);
     }
 }
 ```
 
-## Thread Safety
+**Important:** Use `FireflyCacheManager.class` (the concrete class) in `@ConditionalOnBean`.
 
-- `FireflyCacheManager`: Thread-safe (uses `ConcurrentHashMap`)
-- `CaffeineCacheAdapter`: Thread-safe (Caffeine is thread-safe)
-- `RedisCacheAdapter`: Thread-safe (Lettuce is thread-safe)
+## Auto-Configuration
 
-## Performance Considerations
+The library provides two auto-configuration classes:
 
-1. **Caffeine**: Optimized for high-throughput, low-latency scenarios
-2. **Redis**: Network overhead, suitable for distributed scenarios
-3. **Serialization**: JSON is readable but slower than binary formats
-4. **Reactive API**: Non-blocking operations prevent thread pool exhaustion
+### 1. CacheAutoConfiguration (Always Loaded)
+- **Package:** `com.firefly.common.cache.config`
+- **Provides:**
+  - `FireflyCacheManager` bean
+  - `CacheSelectionStrategy` bean
+  - `CacheSerializer` bean
+  - `CaffeineCacheAdapter` bean (when Caffeine is on classpath)
 
-## Testing Strategy
+### 2. RedisCacheAutoConfiguration (Conditionally Loaded)
+- **Package:** `com.firefly.common.cache.config`
+- **Condition:** Only loads when Redis classes are on classpath
+- **Provides:**
+  - `ReactiveRedisConnectionFactory` bean
+  - `ReactiveRedisTemplate` bean
+  - `RedisCacheAdapter` bean
 
-- **Unit Tests**: Test each component in isolation
-- **Integration Tests**: Test with real cache implementations
-- **TestContainers**: Use for Redis integration tests
-- **Mock Adapters**: Use for testing business logic
+## Configuration Properties
 
-## Future Enhancements
+```yaml
+firefly:
+  cache:
+    enabled: true  # Enable/disable cache library
+    default-cache-name: default
+    default-cache-type: AUTO  # AUTO, CAFFEINE, REDIS
+    
+    caffeine:
+      default:
+        enabled: true
+        maximum-size: 10000
+        expire-after-write: 1h
+        expire-after-access: 30m
+        record-stats: true
+    
+    redis:
+      default:
+        enabled: true
+        host: localhost
+        port: 6379
+        database: 0
+        key-prefix: "cache:"
+        default-ttl: 1h
+```
 
-- Aspect-based annotation processing
-- Multi-level caching (L1/L2)
-- Cache warming strategies
-- Advanced eviction policies
-- Distributed cache synchronization
+## Bean Matching Rules
+
+### ✅ Correct Usage
+
+```java
+// Inject the concrete class
+@Autowired
+private FireflyCacheManager cacheManager;
+
+// Use in @ConditionalOnBean
+@ConditionalOnBean(FireflyCacheManager.class)
+public MyService myService(FireflyCacheManager cacheManager) {
+    return new MyService(cacheManager);
+}
+```
+
+### ❌ Incorrect Usage (Old API - Removed)
+
+```java
+// DON'T: These interfaces were removed
+import com.firefly.common.cache.FireflyCacheManager;  // Removed
+import com.firefly.common.cache.FireflyCache;         // Removed
+```
+
+## Why This Architecture?
+
+### Previous Problem (Before Fix)
+
+The library had two classes with the same name:
+1. **Interface:** `com.firefly.common.cache.FireflyCacheManager` (synchronous API)
+2. **Class:** `com.firefly.common.cache.manager.FireflyCacheManager` (reactive implementation)
+
+The class did NOT implement the interface, causing:
+- `@ConditionalOnBean(FireflyCacheManager.class)` to fail in other libraries
+- Confusion about which type to use
+- Bean matching issues in Spring
+
+### Current Solution (After Fix)
+
+We removed the unnecessary interfaces and simplified the architecture:
+- **Single public class:** `com.firefly.common.cache.manager.FireflyCacheManager`
+- **Internal reactive API:** `CacheAdapter` interface
+- **Clear separation:** Public API (FireflyCacheManager) vs Internal API (CacheAdapter)
+
+This follows the **Single Responsibility Principle** and makes the library easier to use.
+
+## Testing
+
+### Unit Tests
+```java
+@Test
+void testCacheManager() {
+    FireflyCacheManager manager = new FireflyCacheManager();
+    
+    CaffeineCacheConfig config = CaffeineCacheConfig.builder()
+        .maximumSize(100L)
+        .build();
+    
+    CacheAdapter adapter = new CaffeineCacheAdapter("test", config);
+    manager.registerCache("test", adapter);
+    
+    CacheAdapter selected = manager.selectCache("test");
+    assertNotNull(selected);
+}
+```
+
+### Integration Tests
+```java
+@SpringBootTest
+@TestPropertySource(properties = {
+    "firefly.cache.enabled=true"
+})
+class MyIntegrationTest {
+    
+    @Autowired
+    private FireflyCacheManager cacheManager;
+    
+    @Test
+    void testCacheIsAvailable() {
+        assertNotNull(cacheManager);
+        assertTrue(cacheManager.isEnabled());
+    }
+}
+```
+
+## Best Practices
+
+1. **Always inject `FireflyCacheManager`** - This is the public API
+2. **Use `@ConditionalOnBean(FireflyCacheManager.class)`** - For optional cache features
+3. **Configure via properties** - Don't create beans manually unless necessary
+4. **Use reactive API internally** - `CacheAdapter` returns `Mono`/`Flux`
+5. **Handle Optional properly** - Cache operations return `Mono<Optional<T>>`
+
+## Summary
+
+- ✅ **Public API:** `com.firefly.common.cache.manager.FireflyCacheManager`
+- ✅ **Internal API:** `com.firefly.common.cache.core.CacheAdapter`
+- ✅ **Redis is optional:** Works without Redis dependencies
+- ✅ **Auto-configuration:** Automatically sets up based on classpath
+- ✅ **Bean matching:** Use `FireflyCacheManager.class` in conditions
+- ✅ **Clean architecture:** Clear separation of concerns
+
+For more information, see:
+- [Optional Dependencies Guide](OPTIONAL_DEPENDENCIES.md)
+- [README](../README.md)
 

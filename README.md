@@ -43,11 +43,12 @@ A unified caching library providing standardized cache abstractions with Caffein
 ## ✨ Features
 
 - **Zero Configuration**: Works out of the box with Spring Boot auto-configuration
-- **Optional Dependencies**: Redis is completely optional - use Caffeine-only or add Redis when needed
-- **Hexagonal Architecture**: Clean separation between business logic and infrastructure
+- **Optional Dependencies**: Redis is completely optional - use Caffeine-only or add Redis when needed ([see guide](docs/OPTIONAL_DEPENDENCIES.md))
+- **Hexagonal Architecture**: Clean separation between business logic and infrastructure ([see architecture](docs/ARCHITECTURE.md))
 - **Multiple Cache Providers**: Support for Caffeine (in-memory) and Redis (distributed)
 - **Reactive API**: Non-blocking operations using Project Reactor
 - **Auto-Configuration**: Automatic Spring Boot configuration with sensible defaults
+- **Proper Bean Matching**: Fixed architecture ensures `@ConditionalOnBean` works correctly
 - **Health Monitoring**: Built-in health checks and metrics
 - **Flexible Serialization**: JSON serialization with Jackson support
 - **Declarative Caching**: Annotation-based caching support (programmatic API recommended)

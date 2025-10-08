@@ -20,8 +20,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.firefly.common.cache.adapter.caffeine.CaffeineCacheAdapter;
 import com.firefly.common.cache.adapter.caffeine.CaffeineCacheConfig;
-import com.firefly.common.cache.adapter.redis.RedisCacheAdapter;
-import com.firefly.common.cache.adapter.redis.RedisCacheConfig;
 import com.firefly.common.cache.core.CacheAdapter;
 import com.firefly.common.cache.manager.AutoCacheSelectionStrategy;
 import com.firefly.common.cache.manager.CacheSelectionStrategy;
@@ -32,23 +30,17 @@ import com.firefly.common.cache.serialization.JsonCacheSerializer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.*;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Primary;
-import org.springframework.data.redis.connection.ReactiveRedisConnectionFactory;
-import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
-import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.springframework.data.redis.core.ReactiveRedisTemplate;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
-import org.springframework.data.redis.serializer.RedisSerializationContext;
-import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
- * Auto-configuration for the Cache library.
+ * Core auto-configuration for the Firefly Cache library.
  * <p>
  * This configuration class automatically sets up the cache library when included
  * in a Spring Boot application. It enables configuration properties, sets up
@@ -56,12 +48,17 @@ import org.springframework.scheduling.annotation.EnableAsync;
  * <p>
  * Components automatically discovered and configured:
  * <ul>
- *   <li>Cache adapters (Caffeine, Redis)</li>
+ *   <li>Caffeine cache adapter (always available)</li>
  *   <li>Cache manager with selection strategy</li>
  *   <li>Serialization support</li>
  *   <li>Health indicators for Spring Boot Actuator</li>
  *   <li>Metrics collection via Micrometer</li>
  * </ul>
+ * <p>
+ * <b>Note:</b> Redis support is optional and configured separately in
+ * {@link RedisCacheAutoConfiguration} when Redis dependencies are present.
+ *
+ * @see RedisCacheAutoConfiguration
  */
 @AutoConfiguration
 @ConditionalOnProperty(prefix = "firefly.cache", name = "enabled", havingValue = "true", matchIfMissing = true)
@@ -73,7 +70,7 @@ public class CacheAutoConfiguration {
 
     public CacheAutoConfiguration() {
         log.info("Firefly Cache Auto-Configuration - Starting initialization");
-        log.info("Cache adapters will be auto-discovered: Caffeine, Redis");
+        log.info("Caffeine cache adapter will be auto-configured (Redis is optional)");
     }
 
     /**
