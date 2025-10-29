@@ -125,61 +125,25 @@ public class CacheManagerFactory {
                                                    Duration defaultTtl,
                                                    String description,
                                                    String requestedBy) {
-        // Auto-detect caller if not provided
-        String caller = requestedBy != null ? requestedBy : detectCaller();
-
-        log.info("");
-        log.info("╔═══════════════════════════════════════════════════════════════════════════");
-        log.info("║ CREATING NEW CACHE MANAGER");
-        log.info("╠═══════════════════════════════════════════════════════════════════════════");
-        log.info("║ Cache Name       : {}", cacheName);
-        log.info("║ Description      : {}", description);
-        log.info("║ Requested By     : {}", caller);
-        log.info("║ Preferred Type   : {}", cacheType);
-        log.info("║ Key Prefix       : {}", keyPrefix);
-        log.info("║ Default TTL      : {}", defaultTtl);
-        log.info("╚═══════════════════════════════════════════════════════════════════════════");
-
-        CacheAdapter primaryCache;
-        CacheAdapter fallbackCache = null;
-
         // Resolve AUTO to actual type based on availability
         CacheType resolvedType = cacheType;
         if (cacheType == CacheType.AUTO) {
             resolvedType = redisAvailable ? CacheType.REDIS : CacheType.CAFFEINE;
-            log.info("▶ AUTO mode: resolved to {}", resolvedType);
         }
 
+        CacheAdapter primaryCache;
+        CacheAdapter fallbackCache = null;
+
+        // Create cache based on resolved type
         if (resolvedType == CacheType.REDIS && redisAvailable) {
-            log.info("▶ Creating Redis cache as PRIMARY provider...");
             primaryCache = createRedisCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
-            log.info("  ✓ Redis cache created successfully");
-            
-            log.info("▶ Creating Caffeine cache as FALLBACK provider...");
+            // Only create fallback for distributed caches to handle Redis failures
             fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
-            log.info("  ✓ Caffeine fallback created successfully");
+            log.info("Cache '{}' created: {} + Caffeine fallback (TTL: {})", cacheName, resolvedType, defaultTtl);
         } else {
-            if (resolvedType == CacheType.REDIS && !redisAvailable) {
-                log.warn("⚠ Redis requested but not available (missing dependencies or connection), falling back to Caffeine");
-            }
-            log.info("▶ Creating Caffeine cache as PRIMARY provider...");
             primaryCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
-            log.info("  ✓ Caffeine cache created successfully");
+            log.info("Cache '{}' created: {} (TTL: {})", cacheName, resolvedType, defaultTtl);
         }
-
-        log.info("");
-        log.info("╔═══════════════════════════════════════════════════════════════════════════");
-        log.info("║ CACHE MANAGER CREATED SUCCESSFULLY");
-        log.info("╠═══════════════════════════════════════════════════════════════════════════");
-        log.info("║ Primary Provider : {} ({})", primaryCache.getCacheType(), primaryCache.getCacheName());
-        if (fallbackCache != null) {
-            log.info("║ Fallback Provider: {} ({})", fallbackCache.getCacheType(), fallbackCache.getCacheName());
-        } else {
-            log.info("║ Fallback Provider: NONE");
-        }
-        log.info("║ Ready for use by : {}", caller);
-        log.info("╚═══════════════════════════════════════════════════════════════════════════");
-        log.info("");
 
         return new FireflyCacheManager(primaryCache, fallbackCache);
     }

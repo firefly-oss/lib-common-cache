@@ -66,10 +66,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @Slf4j
 public class CacheAutoConfiguration {
 
-    public CacheAutoConfiguration() {
-        log.info("Firefly Cache Auto-Configuration - Starting initialization");
-        log.info("Caffeine cache adapter will be auto-configured (Redis is optional)");
-    }
+    // No-arg constructor
 
     /**
      * Provides a default ObjectMapper for JSON serialization if none exists.
@@ -135,19 +132,6 @@ public class CacheAutoConfiguration {
         );
     }
 
-    /**
-     * Creates the default/primary Firefly cache manager for general use.
-     * <p>
-     * This is the @Primary bean that will be injected by default when no qualifier is specified.
-     * Other modules can create their own cache managers using the CacheManagerFactory.
-     */
-    @Bean("defaultCacheManager")
-    @Primary
-    @ConditionalOnMissingBean(name = "defaultCacheManager")
-    public FireflyCacheManager defaultCacheManager(
-            com.firefly.common.cache.factory.CacheManagerFactory factory) {
-        log.info("Creating default cache manager");
-        return factory.createDefaultCacheManager("default");
-    }
+    // Default cache manager removed - applications should create specific caches as needed
 
 }

@@ -62,7 +62,6 @@ public class CaffeineCacheAdapter implements CacheAdapter {
         this.config = config;
         this.expirationTimes = new ConcurrentHashMap<>();
         this.cache = buildCache(config);
-        log.info("Created Caffeine cache adapter '{}' with config: {}", cacheName, config);
     }
 
     private String buildKeyPrefix(String cacheName, String configPrefix) {

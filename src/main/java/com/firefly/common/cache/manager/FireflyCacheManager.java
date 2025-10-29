@@ -68,12 +68,7 @@ public class FireflyCacheManager implements CacheAdapter {
     public FireflyCacheManager(CacheAdapter primaryCache, CacheAdapter fallbackCache) {
         this.primaryCache = primaryCache;
         this.fallbackCache = fallbackCache;
-
-        log.info("Created Firefly Cache Manager");
-        log.info("  • Primary cache: {} ({})", primaryCache.getCacheName(), primaryCache.getCacheType());
-        if (fallbackCache != null) {
-            log.info("  • Fallback cache: {} ({})", fallbackCache.getCacheName(), fallbackCache.getCacheType());
-        }
+        // Logging moved to CacheManagerFactory for single consolidated log
     }
 
     // ================================

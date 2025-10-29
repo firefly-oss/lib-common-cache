@@ -79,7 +79,6 @@ public class RedisCacheAdapter implements CacheAdapter {
         this.config = config;
         this.serializer = serializer;
         this.keyPrefix = buildKeyPrefix(cacheName, config.getKeyPrefix());
-        log.info("Created Redis cache adapter '{}' with config: {}", cacheName, config);
     }
 
     private String buildKeyPrefix(String cacheName, String configPrefix) {
