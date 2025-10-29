@@ -143,7 +143,14 @@ public class CacheManagerFactory {
         CacheAdapter primaryCache;
         CacheAdapter fallbackCache = null;
 
-        if (cacheType == CacheType.REDIS && redisAvailable) {
+        // Resolve AUTO to actual type based on availability
+        CacheType resolvedType = cacheType;
+        if (cacheType == CacheType.AUTO) {
+            resolvedType = redisAvailable ? CacheType.REDIS : CacheType.CAFFEINE;
+            log.info("▶ AUTO mode: resolved to {}", resolvedType);
+        }
+
+        if (resolvedType == CacheType.REDIS && redisAvailable) {
             log.info("▶ Creating Redis cache as PRIMARY provider...");
             primaryCache = createRedisCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
             log.info("  ✓ Redis cache created successfully");
@@ -152,7 +159,7 @@ public class CacheManagerFactory {
             fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
             log.info("  ✓ Caffeine fallback created successfully");
         } else {
-            if (cacheType == CacheType.REDIS && !redisAvailable) {
+            if (resolvedType == CacheType.REDIS && !redisAvailable) {
                 log.warn("⚠ Redis requested but not available (missing dependencies or connection), falling back to Caffeine");
             }
             log.info("▶ Creating Caffeine cache as PRIMARY provider...");
