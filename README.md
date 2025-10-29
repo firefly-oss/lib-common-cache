@@ -4,7 +4,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2-green.svg)](https://spring.io/projects/spring-boot)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-A unified caching library providing standardized cache abstractions with Caffeine and Redis implementations, following hexagonal architecture principles.
+A unified, hexagonal caching library with pluggable providers (Caffeine, Redis, Hazelcast, JCache/JSR‑107) and optional Smart L1+L2 (Caffeine + distributed) caching, exposing a reactive API and clean, isolated multi‑cache support.
 
 ---
 
