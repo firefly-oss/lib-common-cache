@@ -57,6 +57,8 @@ import java.time.Duration;
 @Slf4j
 public class CacheManagerFactory {
 
+    private java.util.List<com.firefly.common.cache.spi.CacheProviderFactory> providerFactories;
+
     private final CacheProperties properties;
     private final ObjectMapper objectMapper;
     private final Object redisConnectionFactory; // Use Object to avoid loading Redis classes
@@ -86,6 +88,7 @@ public CacheManagerFactory(CacheProperties properties,
         this.redisAvailable = checkRedisAvailable();
         this.hazelcastAvailable = checkHazelcastAvailable();
         this.jcacheAvailable = checkJCacheAvailable();
+        this.providerFactories = loadProviderFactories();
         log.info("CacheManagerFactory initialized (Redis: {}, Hazelcast: {}, JCache: {})",
                 redisAvailable, hazelcastAvailable, jcacheAvailable);
     }
@@ -130,12 +133,6 @@ public CacheManagerFactory(CacheProperties properties,
 
     /**
      * Creates a new cache manager with custom configuration.
-     *
-     * @param cacheName the name of the cache
-     * @param cacheType the type of cache (CAFFEINE or REDIS)
-     * @param keyPrefix the key prefix for this cache
-     * @param defaultTtl the default TTL for cache entries
-     * @return a configured FireflyCacheManager
      */
     public FireflyCacheManager createCacheManager(String cacheName,
                                                    CacheType cacheType,
@@ -165,56 +162,43 @@ public CacheManagerFactory(CacheProperties properties,
         boolean caffeineEnabled = properties.getCaffeine().isEnabled();
         boolean redisEnabled = properties.getRedis().isEnabled() && redisAvailable;
         
-        // Resolve AUTO to actual type based on availability and enabled flags
+        // Resolve AUTO to a provider
         CacheType resolvedType = cacheType;
         if (cacheType == CacheType.AUTO) {
-            if (redisEnabled) {
-                resolvedType = CacheType.REDIS;
-            } else if (hazelcastAvailable) {
-                resolvedType = CacheType.HAZELCAST;
-            } else if (jcacheAvailable) {
-                resolvedType = CacheType.JCACHE;
-            } else if (caffeineEnabled) {
-                resolvedType = CacheType.CAFFEINE;
-            } else {
-                throw new IllegalStateException("No cache adapters available. At least one cache type must be enabled.");
-            }
+            resolvedType = selectBestProviderType();
         }
 
         CacheAdapter primaryCache;
         CacheAdapter fallbackCache = null;
 
-        // Create cache based on resolved type
-        if (resolvedType == CacheType.REDIS && redisEnabled) {
-            primaryCache = createRedisCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
-            if (caffeineEnabled) {
-                fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
-            }
-            log.info("Cache '{}' created: {} {} (TTL: {})", cacheName, resolvedType,
-                    fallbackCache != null ? "+ Caffeine fallback" : "(no fallback)", defaultTtl);
-        } else if (resolvedType == CacheType.HAZELCAST && hazelcastAvailable) {
-            primaryCache = createHazelcastCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
-            if (caffeineEnabled) {
-                fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
-            }
-            log.info("Cache '{}' created: {} {} (TTL: {})", cacheName, resolvedType,
-                    fallbackCache != null ? "+ Caffeine fallback" : "(no fallback)", defaultTtl);
-        } else if (resolvedType == CacheType.JCACHE && jcacheAvailable) {
-            primaryCache = createJCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
-            if (caffeineEnabled) {
-                fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
-            }
-            log.info("Cache '{}' created: {} {} (TTL: {})", cacheName, resolvedType,
-                    fallbackCache != null ? "+ Caffeine fallback" : "(no fallback)", defaultTtl);
-        } else if (resolvedType == CacheType.CAFFEINE && caffeineEnabled) {
-            primaryCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
-            log.info("Cache '{}' created: {} (TTL: {})", cacheName, resolvedType, defaultTtl);
+        // Prefer SPI providers if available
+        var ctx = new com.firefly.common.cache.spi.CacheProviderFactory.ProviderContext(
+                properties, objectMapper, redisConnectionFactory, hazelcastInstance, jcacheManager);
+        var provider = findProvider(resolvedType);
+        if (provider != null && provider.isAvailable(ctx)) {
+            primaryCache = provider.create(cacheName, keyPrefix, defaultTtl, ctx);
         } else {
-            throw new IllegalStateException(
-                String.format("Cannot create cache of type %s: provider not available or not enabled",
-                    resolvedType)
-            );
+            // Fallback to built-in creation methods (backward compatibility)
+            if (resolvedType == CacheType.REDIS && redisEnabled) {
+                primaryCache = createRedisCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
+            } else if (resolvedType == CacheType.HAZELCAST && hazelcastAvailable) {
+                primaryCache = createHazelcastCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
+            } else if (resolvedType == CacheType.JCACHE && jcacheAvailable) {
+                primaryCache = createJCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
+            } else if (resolvedType == CacheType.CAFFEINE && caffeineEnabled) {
+                primaryCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
+            } else {
+                throw new IllegalStateException(String.format("Cannot create cache of type %s: provider not available or not enabled", resolvedType));
+            }
         }
+
+        // Fallback cache (Caffeine) when primary is distributed
+        if (resolvedType != CacheType.CAFFEINE && caffeineEnabled) {
+            fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
+        }
+
+        log.info("Cache '{}' created: {} {} (TTL: {})", cacheName, resolvedType,
+                fallbackCache != null ? "+ Caffeine fallback" : "(no fallback)", defaultTtl);
 
         return new FireflyCacheManager(primaryCache, fallbackCache);
     }
@@ -266,6 +250,38 @@ public CacheManagerFactory(CacheProperties properties,
      * <p>
      * This approach ensures that Redis classes are only loaded when Redis is actually available.
      */
+    // ---------------- SPI helpers ----------------
+
+    private java.util.List<com.firefly.common.cache.spi.CacheProviderFactory> loadProviderFactories() {
+        java.util.List<com.firefly.common.cache.spi.CacheProviderFactory> list = new java.util.ArrayList<>();
+        try {
+            var loader = java.util.ServiceLoader.load(com.firefly.common.cache.spi.CacheProviderFactory.class);
+            loader.forEach(list::add);
+            list.sort(java.util.Comparator.comparingInt(com.firefly.common.cache.spi.CacheProviderFactory::priority));
+        } catch (Throwable ignored) { }
+        return list;
+    }
+
+    private CacheType selectBestProviderType() {
+        for (var factory : providerFactories) {
+            var ctx = new com.firefly.common.cache.spi.CacheProviderFactory.ProviderContext(
+                    properties, objectMapper, redisConnectionFactory, hazelcastInstance, jcacheManager);
+            if (factory.isAvailable(ctx)) {
+                return factory.getType();
+            }
+        }
+        // Fallback priorities
+        if (redisAvailable) return CacheType.REDIS;
+        if (hazelcastAvailable) return CacheType.HAZELCAST;
+        if (jcacheAvailable) return CacheType.JCACHE;
+        if (properties.getCaffeine().isEnabled()) return CacheType.CAFFEINE;
+        throw new IllegalStateException("No cache adapters available. At least one cache type must be enabled.");
+    }
+
+    private com.firefly.common.cache.spi.CacheProviderFactory findProvider(CacheType type) {
+        return providerFactories.stream().filter(p -> p.getType() == type).findFirst().orElse(null);
+    }
+
     private CacheAdapter createRedisCacheAdapterViaReflection(String cacheName, String keyPrefix, Duration defaultTtl) {
         try {
             log.debug("  → Configuring Redis adapter with prefix '{}' (via reflection)", keyPrefix);

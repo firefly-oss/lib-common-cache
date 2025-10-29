@@ -65,6 +65,7 @@ The library follows these key principles:
 ### Adapters (Infrastructure Layer)
 - **`CaffeineCacheAdapter`**: High-performance in-memory cache (always available)
 - **`RedisCacheAdapter`**: Distributed cache with persistence (optional)
+- **`Hazelcast`/`JCache` adapters**: Optional providers discovered via SPI
 - **`NoOpCacheAdapter`**: Disabled cache for testing
 
 ## Public API
@@ -228,6 +229,14 @@ The library provides two auto-configuration classes:
 - **Provides:**
   - `ReactiveRedisConnectionFactory` bean
   - `ReactiveRedisTemplate` bean
+
+### Provider SPI (Best-in-class extensibility)
+
+lib-common-cache exposes an SPI so new providers can be plugged in without modifying core code.
+- Interface: `com.firefly.common.cache.spi.CacheProviderFactory`
+- Discovery: Java ServiceLoader (`META-INF/services/...`)
+- Built-ins: Redis, Hazelcast, JCache, Caffeine
+- Selection: `AUTO` orders by provider priority (Redis > Hazelcast > JCache > Caffeine), with Caffeine fallback for distributed caches
 
 ### Bean Creation Logic
 
