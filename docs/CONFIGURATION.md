@@ -60,10 +60,14 @@ The library supports multiple cache types:
 |------|-------------|----------|
 | `CAFFEINE` | High-performance in-memory cache | Single instance, low latency |
 | `REDIS` | Distributed cache with persistence | Multi-instance, shared state |
-| `AUTO` | Automatically select best available | Flexible deployment |
+| `HAZELCAST` | Distributed in-memory data grid | Clustered in‑memory sharing |
+| `JCACHE` | JSR‑107 provider (Ehcache/Infinispan) | Standardized cache API |
+| `AUTO` | Automatically select best available | Prefers REDIS > HAZELCAST > JCACHE > CAFFEINE |
 | `NOOP` | Disabled (no-operation) | Testing, debugging |
 
 ### Selecting Cache Type
+
+Provide the default type globally. If you use Hazelcast or JCache, ensure a HazelcastInstance or JCache CacheManager bean exists in the context.
 
 ```yaml
 firefly:

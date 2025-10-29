@@ -64,26 +64,27 @@ public class UserService {
     private final FireflyCacheManager cacheManager;
     private final UserRepository userRepository;
     
-    private static final String USER_CACHE = "users";
-    private static final Duration USER_TTL = Duration.ofMinutes(30);
+@Qualifier("userCacheManager")
+private final FireflyCacheManager userCacheManager; // dedicated cache manager for users
+private static final Duration USER_TTL = Duration.ofMinutes(30);
+ 
+/**
+ * Get user by ID with caching
+ */
+public Mono<User> getUser(String userId) {
+    String cacheKey = "user:" + userId;
     
-    /**
-     * Get user by ID with caching
-     */
-    public Mono<User> getUser(String userId) {
-        String cacheKey = "user:" + userId;
-        
-        return cacheManager.get(USER_CACHE, cacheKey, User.class)
-            .flatMap(cachedUser -> {
-                if (cachedUser.isPresent()) {
-                    log.debug("Cache hit for user: {}", userId);
-                    return Mono.just(cachedUser.get());
-                }
-                
-                log.debug("Cache miss for user: {}", userId);
-                return loadAndCacheUser(userId);
-            });
-    }
+    return userCacheManager.get(cacheKey, User.class)
+        .flatMap(cachedUser -> {
+            if (cachedUser.isPresent()) {
+                log.debug("Cache hit for user: {}", userId);
+                return Mono.just(cachedUser.get());
+            }
+            
+            log.debug("Cache miss for user: {}", userId);
+            return loadAndCacheUser(userId);
+        });
+}
     
     /**
      * Update user and invalidate cache
@@ -91,25 +92,25 @@ public class UserService {
     public Mono<User> updateUser(User user) {
         String cacheKey = "user:" + user.getId();
         
-        return userRepository.save(user)
-            .flatMap(savedUser -> 
-                cacheManager.evict(USER_CACHE, cacheKey)
-                    .thenReturn(savedUser)
-            )
-            .doOnSuccess(u -> log.info("Updated and evicted cache for user: {}", u.getId()));
+return userRepository.save(user)
+    .flatMap(savedUser -> 
+        userCacheManager.evict(cacheKey)
+            .thenReturn(savedUser)
+    )
+    .doOnSuccess(u -> log.info("Updated and evicted cache for user: {}", u.getId()));
     }
     
     /**
      * Create user and cache immediately
      */
     public Mono<User> createUser(User user) {
-        return userRepository.save(user)
-            .flatMap(savedUser -> {
-                String cacheKey = "user:" + savedUser.getId();
-                return cacheManager.put(USER_CACHE, cacheKey, savedUser, USER_TTL)
-                    .thenReturn(savedUser);
-            })
-            .doOnSuccess(u -> log.info("Created and cached user: {}", u.getId()));
+return userRepository.save(user)
+    .flatMap(savedUser -> {
+        String cacheKey = "user:" + savedUser.getId();
+        return userCacheManager.put(cacheKey, savedUser, USER_TTL)
+            .thenReturn(savedUser);
+    })
+    .doOnSuccess(u -> log.info("Created and cached user: {}", u.getId()));
     }
     
     /**
@@ -118,10 +119,10 @@ public class UserService {
     public Mono<Void> deleteUser(String userId) {
         String cacheKey = "user:" + userId;
         
-        return userRepository.deleteById(userId)
-            .then(cacheManager.evict(USER_CACHE, cacheKey))
-            .then()
-            .doOnSuccess(v -> log.info("Deleted user and cache: {}", userId));
+return userRepository.deleteById(userId)
+    .then(userCacheManager.evict(cacheKey))
+    .then()
+    .doOnSuccess(v -> log.info("Deleted user and cache: {}", userId));
     }
     
     /**
@@ -168,11 +169,11 @@ public class ProductService {
     public Mono<Product> getProduct(String productId) {
         String cacheKey = "product:" + productId;
         
-        return cacheManager.get(PRODUCT_CACHE, cacheKey, Product.class)
-            .flatMap(cached -> cached
-                .map(Mono::just)
-                .orElseGet(() -> loadAndCacheProduct(productId))
-            );
+return productCacheManager.get(cacheKey, Product.class)
+    .flatMap(cached -> cached
+        .map(Mono::just)
+        .orElseGet(() -> loadAndCacheProduct(productId))
+    );
     }
     
     /**
@@ -181,13 +182,13 @@ public class ProductService {
     public Flux<Product> getProductsByCategory(String categoryId) {
         String cacheKey = "category:" + categoryId + ":products";
         
-        return cacheManager.get(CATEGORY_CACHE, cacheKey, ProductList.class)
-            .flatMapMany(cached -> {
-                if (cached.isPresent()) {
-                    return Flux.fromIterable(cached.get().getProducts());
-                }
-                return loadAndCacheProductsByCategory(categoryId);
-            });
+return productCacheManager.get(cacheKey, ProductList.class)
+    .flatMapMany(cached -> {
+        if (cached.isPresent()) {
+            return Flux.fromIterable(cached.get().getProducts());
+        }
+        return loadAndCacheProductsByCategory(categoryId);
+    });
     }
     
     /**
@@ -202,8 +203,8 @@ public class ProductService {
             .flatMap(updatedProduct -> {
                 String cacheKey = "product:" + productId;
                 // Update cache with new data
-                return cacheManager.put(PRODUCT_CACHE, cacheKey, updatedProduct, Duration.ofHours(24))
-                    .thenReturn(updatedProduct);
+return productCacheManager.put(cacheKey, updatedProduct, Duration.ofHours(24))
+    .thenReturn(updatedProduct);
             });
     }
     
@@ -211,20 +212,20 @@ public class ProductService {
         return productRepository.findById(productId)
             .flatMap(product -> {
                 String cacheKey = "product:" + productId;
-                return cacheManager.put(PRODUCT_CACHE, cacheKey, product, Duration.ofHours(24))
-                    .thenReturn(product);
+return productCacheManager.put(cacheKey, product, Duration.ofHours(24))
+    .thenReturn(product);
             });
     }
     
     private Flux<Product> loadAndCacheProductsByCategory(String categoryId) {
-        return productRepository.findByCategory(categoryId)
-            .collectList()
-            .flatMapMany(products -> {
-                String cacheKey = "category:" + categoryId + ":products";
-                ProductList productList = new ProductList(products);
-                return cacheManager.put(CATEGORY_CACHE, cacheKey, productList, Duration.ofMinutes(15))
-                    .thenMany(Flux.fromIterable(products));
-            });
+return productRepository.findByCategory(categoryId)
+    .collectList()
+    .flatMapMany(products -> {
+        String cacheKey = "category:" + categoryId + ":products";
+        ProductList productList = new ProductList(products);
+        return productCacheManager.put(cacheKey, productList, Duration.ofMinutes(15))
+            .thenMany(Flux.fromIterable(products));
+    });
     }
 }
 ```
