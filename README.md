@@ -19,6 +19,11 @@ A unified caching library providing standardized cache abstractions with Caffein
   - [Programmatic API](#programmatic-api)
   - [Declarative Annotations](#declarative-annotations)
   - [Cache-Specific Operations](#cache-specific-operations)
+- [Multiple Cache Managers](#-multiple-cache-managers)
+  - [Why Multiple Caches](#why-multiple-caches)
+  - [Using CacheManagerFactory](#using-cachemanagerfactory)
+  - [Example: Multiple Caches in Webhooks](#example-multiple-caches-in-webhooks)
+  - [Enhanced Logging](#enhanced-logging)
 - [Architecture](#-architecture)
   - [Hexagonal Architecture](#hexagonal-architecture)
   - [Key Components](#key-components)
@@ -44,10 +49,12 @@ A unified caching library providing standardized cache abstractions with Caffein
 
 - **Zero Configuration**: Works out of the box with Spring Boot auto-configuration
 - **Optional Dependencies**: Redis is completely optional - use Caffeine-only or add Redis when needed ([see guide](docs/OPTIONAL_DEPENDENCIES.md))
+- **Multiple Independent Caches**: Create multiple isolated cache managers with different configurations in the same application
 - **Hexagonal Architecture**: Clean separation between business logic and infrastructure ([see architecture](docs/ARCHITECTURE.md))
 - **Multiple Cache Providers**: Support for Caffeine (in-memory) and Redis (distributed)
 - **Reactive API**: Non-blocking operations using Project Reactor
 - **Auto-Configuration**: Automatic Spring Boot configuration with sensible defaults
+- **Enhanced Logging**: Detailed cache creation tracking with provider information and caller detection
 - **Proper Bean Matching**: Fixed architecture ensures `@ConditionalOnBean` works correctly
 - **Health Monitoring**: Built-in health checks and metrics
 - **Flexible Serialization**: JSON serialization with Jackson support
@@ -233,6 +240,126 @@ public class CacheOperations {
     }
 }
 ```
+
+## 🔀 Multiple Cache Managers
+
+### Why Multiple Caches?
+
+In complex microservices, you often need **multiple independent caches** with different configurations:
+
+- **HTTP Idempotency Cache**: Short TTL (24 hours), stores request deduplication data
+- **Webhook Event Cache**: Long TTL (7 days), tracks processed events  
+- **Business Rules Cache**: Medium TTL (4 hours), caches configuration data
+- **Default Application Cache**: General purpose caching
+
+**Problem**: Using a single cache manager causes **key collisions** and **configuration conflicts**.
+
+**Solution**: `CacheManagerFactory` creates **isolated cache managers**, each with:
+- ✅ Independent key prefixes (no collisions)
+- ✅ Different TTLs per use case
+- ✅ Separate provider configurations (Redis vs Caffeine)
+- ✅ Isolated failure domains
+
+### Using CacheManagerFactory
+
+The `CacheManagerFactory` is automatically configured and available for injection:
+
+```java
+@Configuration
+public class MyCacheConfiguration {
+    
+    @Bean("businessRulesCacheManager")
+    public FireflyCacheManager businessRulesCacheManager(
+            CacheManagerFactory factory) {
+        
+        return factory.createCacheManager(
+                "business-rules",                    // Cache name
+                CacheType.REDIS,                     // Preferred type
+                "firefly:business:rules",            // Key prefix (isolated namespace)
+                Duration.ofHours(4),                 // TTL
+                "Business Rules Cache - Caches product rules and configurations",
+                "MyApplication.MyCacheConfiguration" // Caller (optional)
+        );
+    }
+    
+    @Bean
+    public MyService myService(
+            @Qualifier("businessRulesCacheManager") FireflyCacheManager cacheManager) {
+        return new MyService(cacheManager);
+    }
+}
+```
+
+### Example: Multiple Caches in Webhooks
+
+The `common-platform-webhooks-mgmt` microservice demonstrates using multiple isolated caches:
+
+```
+Webhook Microservice
+├── httpIdempotencyCacheManager
+│   ├── Provider: Redis (primary) → Caffeine (fallback)
+│   ├── Prefix: "firefly:http:idempotency"
+│   ├── TTL: 24 hours
+│   ├── Purpose: Prevent duplicate HTTP requests
+│   └── Auto-configured by lib-common-web
+│
+├── webhookIdempotencyCacheManager
+│   ├── Provider: Redis (primary) → Caffeine (fallback)
+│   ├── Prefix: "firefly:webhooks:idempotency"
+│   ├── TTL: 7 days
+│   ├── Purpose: Track processed webhook events
+│   └── Auto-configured by webhooks-processor
+│
+└── defaultCacheManager (@Primary)
+    ├── Provider: Caffeine or Redis
+    ├── Prefix: "firefly:cache:default"
+    ├── TTL: 1 hour
+    └── Purpose: General application caching
+```
+
+**Keys in Redis** (no collisions):
+```
+firefly:http:idempotency::idempotency:POST:/api/webhooks:abc123
+firefly:webhooks:idempotency:webhook:processing:550e8400-e29b-41d4-a716-446655440000
+firefly:webhooks:idempotency:webhook:processed:550e8400-e29b-41d4-a716-446655440000  
+firefly:cache:default:user:session:xyz789
+```
+
+### Enhanced Logging
+
+The library provides **detailed logging** when creating cache managers:
+
+```
+╔═══════════════════════════════════════════════════════════════════════════
+║ CREATING NEW CACHE MANAGER
+╠═══════════════════════════════════════════════════════════════════════════
+║ Cache Name       : webhook-idempotency
+║ Description      : Webhook Event Idempotency Cache - Ensures webhook events are processed exactly once (TTL: 7 days)
+║ Requested By     : webhooks-processor.WebhookIdempotencyAutoConfiguration
+║ Preferred Type   : REDIS
+║ Key Prefix       : firefly:webhooks:idempotency
+║ Default TTL      : PT168H
+╚═══════════════════════════════════════════════════════════════════════════
+▶ Creating Redis cache as PRIMARY provider...
+  ✓ Redis cache created successfully
+▶ Creating Caffeine cache as FALLBACK provider...
+  ✓ Caffeine fallback created successfully
+
+╔═══════════════════════════════════════════════════════════════════════════
+║ CACHE MANAGER CREATED SUCCESSFULLY
+╠═══════════════════════════════════════════════════════════════════════════
+║ Primary Provider : REDIS (webhook-idempotency)
+║ Fallback Provider: CAFFEINE (webhook-idempotency)
+║ Ready for use by : webhooks-processor.WebhookIdempotencyAutoConfiguration
+╚═══════════════════════════════════════════════════════════════════════════
+```
+
+**Benefits of enhanced logging:**
+- 🔍 **Tracking**: Know exactly who requested each cache
+- 📝 **Documentation**: Description explains purpose
+- 🐛 **Debugging**: Identify misconfigured caches quickly
+- 🔧 **Provider Info**: See which provider (Redis/Caffeine) is being used
+- ⚠️ **Warnings**: Immediate feedback when Redis is unavailable
 
 ## 🏗️ Architecture
 

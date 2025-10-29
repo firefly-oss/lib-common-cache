@@ -93,84 +93,40 @@ public class CacheAutoConfiguration {
     }
 
     /**
-     * Creates the main Firefly cache manager.
+     * Creates the CacheManagerFactory that can create multiple independent cache managers.
      * <p>
-     * The manager will use the configured cache adapter as primary,
-     * and optionally a second one as fallback (e.g., Redis primary, Caffeine fallback).
+     * This factory is used by other modules (like lib-common-web, microservices, etc.) to create
+     * their own cache managers with independent configurations and key prefixes.
      */
     @Bean
-    @Primary
-    public FireflyCacheManager fireflyCacheManager(CacheProperties properties,
-                                                   java.util.List<CacheAdapter> cacheAdapters) {
-        log.info("Creating Firefly Cache Manager");
-        log.info("   • Preferred cache type: {}", properties.getDefaultCacheType());
-        log.info("   • Available cache adapters: {}", cacheAdapters.size());
-
-        if (cacheAdapters.isEmpty()) {
-            throw new IllegalStateException("No cache adapters available. At least Caffeine should be configured.");
-        }
-
-        // Select primary and fallback caches based on type preference
-        CacheAdapter primaryCache = null;
-        CacheAdapter fallbackCache = null;
-
-        // Prefer Redis as primary if available and configured
-        if (properties.getDefaultCacheType() == com.firefly.common.cache.core.CacheType.REDIS) {
-            primaryCache = cacheAdapters.stream()
-                    .filter(adapter -> adapter.getCacheType() == com.firefly.common.cache.core.CacheType.REDIS)
-                    .findFirst()
-                    .orElse(null);
-
-            // Use Caffeine as fallback
-            fallbackCache = cacheAdapters.stream()
-                    .filter(adapter -> adapter.getCacheType() == com.firefly.common.cache.core.CacheType.CAFFEINE)
-                    .findFirst()
-                    .orElse(null);
-        }
-
-        // If no Redis or preference is Caffeine, use Caffeine as primary
-        if (primaryCache == null) {
-            primaryCache = cacheAdapters.stream()
-                    .filter(adapter -> adapter.getCacheType() == com.firefly.common.cache.core.CacheType.CAFFEINE)
-                    .findFirst()
-                    .orElse(cacheAdapters.get(0)); // Fallback to first available
-        }
-
-        log.info("   • Primary cache: {} ({})", primaryCache.getCacheName(), primaryCache.getCacheType());
-        if (fallbackCache != null) {
-            log.info("   • Fallback cache: {} ({})", fallbackCache.getCacheName(), fallbackCache.getCacheType());
-        }
-
-        return new FireflyCacheManager(primaryCache, fallbackCache);
+    @ConditionalOnMissingBean
+    public com.firefly.common.cache.factory.CacheManagerFactory cacheManagerFactory(
+            CacheProperties properties,
+            @Qualifier("cacheObjectMapper") ObjectMapper objectMapper,
+            org.springframework.beans.factory.ObjectProvider<org.springframework.data.redis.connection.ReactiveRedisConnectionFactory> redisConnectionFactoryProvider) {
+        log.info("Creating CacheManagerFactory");
+        org.springframework.data.redis.connection.ReactiveRedisConnectionFactory redisConnectionFactory =
+                redisConnectionFactoryProvider.getIfAvailable();
+        return new com.firefly.common.cache.factory.CacheManagerFactory(
+                properties,
+                objectMapper,
+                redisConnectionFactory
+        );
     }
 
-    // ================================
-    // Caffeine Cache Configuration
-    // ================================
-
     /**
-     * Creates a Caffeine cache adapter when Caffeine is available and enabled.
+     * Creates the default/primary Firefly cache manager for general use.
+     * <p>
+     * This is the @Primary bean that will be injected by default when no qualifier is specified.
+     * Other modules can create their own cache managers using the CacheManagerFactory.
      */
-    @Bean
-    @ConditionalOnClass(name = "com.github.benmanes.caffeine.cache.Caffeine")
-    @ConditionalOnProperty(prefix = "firefly.cache.caffeine", name = "enabled", havingValue = "true", matchIfMissing = true)
-    public CacheAdapter caffeineCacheAdapter(CacheProperties properties) {
-        log.debug("Creating Caffeine cache adapter");
-        CacheProperties.CaffeineConfig caffeineProps = properties.getCaffeine();
-
-        CaffeineCacheConfig config = CaffeineCacheConfig.builder()
-                .keyPrefix(caffeineProps.getKeyPrefix())
-                .maximumSize(caffeineProps.getMaximumSize())
-                .expireAfterWrite(caffeineProps.getExpireAfterWrite())
-                .expireAfterAccess(caffeineProps.getExpireAfterAccess())
-                .refreshAfterWrite(caffeineProps.getRefreshAfterWrite())
-                .recordStats(caffeineProps.isRecordStats())
-                .weakKeys(caffeineProps.isWeakKeys())
-                .weakValues(caffeineProps.isWeakValues())
-                .softValues(caffeineProps.isSoftValues())
-                .build();
-
-        return new CaffeineCacheAdapter(caffeineProps.getCacheName(), config);
+    @Bean("defaultCacheManager")
+    @Primary
+    @ConditionalOnMissingBean(name = "defaultCacheManager")
+    public FireflyCacheManager defaultCacheManager(
+            com.firefly.common.cache.factory.CacheManagerFactory factory) {
+        log.info("Creating default cache manager");
+        return factory.createDefaultCacheManager("default");
     }
 
 }
