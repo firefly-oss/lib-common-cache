@@ -97,20 +97,41 @@ public class CacheAutoConfiguration {
      * <p>
      * This factory is used by other modules (like lib-common-web, microservices, etc.) to create
      * their own cache managers with independent configurations and key prefixes.
+     * <p>
+     * This version is used when Redis dependencies are available on the classpath.
      */
     @Bean
+    @ConditionalOnClass(name = "org.springframework.data.redis.connection.ReactiveRedisConnectionFactory")
     @ConditionalOnMissingBean
-    public com.firefly.common.cache.factory.CacheManagerFactory cacheManagerFactory(
+    public com.firefly.common.cache.factory.CacheManagerFactory cacheManagerFactoryWithRedis(
             CacheProperties properties,
             @Qualifier("cacheObjectMapper") ObjectMapper objectMapper,
             org.springframework.beans.factory.ObjectProvider<org.springframework.data.redis.connection.ReactiveRedisConnectionFactory> redisConnectionFactoryProvider) {
-        log.info("Creating CacheManagerFactory");
+        log.info("Creating CacheManagerFactory (with Redis support)");
         org.springframework.data.redis.connection.ReactiveRedisConnectionFactory redisConnectionFactory =
                 redisConnectionFactoryProvider.getIfAvailable();
         return new com.firefly.common.cache.factory.CacheManagerFactory(
                 properties,
                 objectMapper,
                 redisConnectionFactory
+        );
+    }
+
+    /**
+     * Creates the CacheManagerFactory that can create multiple independent cache managers.
+     * <p>
+     * This version is used when Redis dependencies are NOT available, providing Caffeine-only support.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public com.firefly.common.cache.factory.CacheManagerFactory cacheManagerFactoryCaffeineOnly(
+            CacheProperties properties,
+            @Qualifier("cacheObjectMapper") ObjectMapper objectMapper) {
+        log.info("Creating CacheManagerFactory (Caffeine-only, Redis not available)");
+        return new com.firefly.common.cache.factory.CacheManagerFactory(
+                properties,
+                objectMapper,
+                null  // No Redis support
         );
     }
 

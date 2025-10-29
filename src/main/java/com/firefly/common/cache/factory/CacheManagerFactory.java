@@ -19,24 +19,13 @@ package com.firefly.common.cache.factory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.firefly.common.cache.adapter.caffeine.CaffeineCacheAdapter;
 import com.firefly.common.cache.adapter.caffeine.CaffeineCacheConfig;
-import com.firefly.common.cache.adapter.redis.RedisCacheAdapter;
-import com.firefly.common.cache.adapter.redis.RedisCacheConfig;
 import com.firefly.common.cache.core.CacheAdapter;
 import com.firefly.common.cache.core.CacheType;
 import com.firefly.common.cache.manager.FireflyCacheManager;
 import com.firefly.common.cache.properties.CacheProperties;
-import com.firefly.common.cache.serialization.CacheSerializer;
-import com.firefly.common.cache.serialization.JsonCacheSerializer;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.connection.ReactiveRedisConnectionFactory;
-import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
-import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.springframework.data.redis.core.ReactiveRedisTemplate;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
-import org.springframework.data.redis.serializer.RedisSerializationContext;
-import org.springframework.data.redis.serializer.StringRedisSerializer;
 
+import java.lang.reflect.Method;
 import java.time.Duration;
 
 /**
@@ -70,7 +59,8 @@ public class CacheManagerFactory {
 
     private final CacheProperties properties;
     private final ObjectMapper objectMapper;
-    private final ReactiveRedisConnectionFactory redisConnectionFactory;
+    private final Object redisConnectionFactory; // Use Object to avoid loading Redis classes
+    private final boolean redisAvailable;
 
     /**
      * Creates a new CacheManagerFactory.
@@ -81,11 +71,25 @@ public class CacheManagerFactory {
      */
     public CacheManagerFactory(CacheProperties properties,
                                 ObjectMapper objectMapper,
-                                ReactiveRedisConnectionFactory redisConnectionFactory) {
+                                Object redisConnectionFactory) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.redisConnectionFactory = redisConnectionFactory;
-        log.info("CacheManagerFactory initialized");
+        this.redisAvailable = checkRedisAvailable();
+        log.info("CacheManagerFactory initialized (Redis available: {})", redisAvailable);
+    }
+
+    /**
+     * Checks if Redis classes are available on the classpath.
+     */
+    private boolean checkRedisAvailable() {
+        try {
+            Class.forName("org.springframework.data.redis.connection.ReactiveRedisConnectionFactory");
+            Class.forName("com.firefly.common.cache.factory.RedisCacheHelper");
+            return redisConnectionFactory != null;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
     }
 
     /**
@@ -139,17 +143,17 @@ public class CacheManagerFactory {
         CacheAdapter primaryCache;
         CacheAdapter fallbackCache = null;
 
-        if (cacheType == CacheType.REDIS && redisConnectionFactory != null) {
+        if (cacheType == CacheType.REDIS && redisAvailable) {
             log.info("▶ Creating Redis cache as PRIMARY provider...");
-            primaryCache = createRedisCacheAdapter(cacheName, keyPrefix, defaultTtl);
+            primaryCache = createRedisCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
             log.info("  ✓ Redis cache created successfully");
             
             log.info("▶ Creating Caffeine cache as FALLBACK provider...");
             fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
             log.info("  ✓ Caffeine fallback created successfully");
         } else {
-            if (cacheType == CacheType.REDIS && redisConnectionFactory == null) {
-                log.warn("⚠ Redis requested but connection factory not available, falling back to Caffeine");
+            if (cacheType == CacheType.REDIS && !redisAvailable) {
+                log.warn("⚠ Redis requested but not available (missing dependencies or connection), falling back to Caffeine");
             }
             log.info("▶ Creating Caffeine cache as PRIMARY provider...");
             primaryCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
@@ -216,50 +220,40 @@ public class CacheManagerFactory {
     }
 
     /**
-     * Creates a Redis cache adapter.
+     * Creates a Redis cache adapter using reflection to avoid loading Redis classes.
+     * <p>
+     * This approach ensures that Redis classes are only loaded when Redis is actually available.
      */
-    private CacheAdapter createRedisCacheAdapter(String cacheName, String keyPrefix, Duration defaultTtl) {
-        if (redisConnectionFactory == null) {
-            throw new IllegalStateException("Redis connection factory is required for Redis cache");
+    private CacheAdapter createRedisCacheAdapterViaReflection(String cacheName, String keyPrefix, Duration defaultTtl) {
+        try {
+            log.debug("  → Configuring Redis adapter with prefix '{}' (via reflection)", keyPrefix);
+            
+            // Load RedisCacheHelper class dynamically
+            Class<?> helperClass = Class.forName("com.firefly.common.cache.factory.RedisCacheHelper");
+            Method createMethod = helperClass.getMethod(
+                "createRedisCacheAdapter",
+                String.class,
+                String.class,
+                Duration.class,
+                Class.forName("org.springframework.data.redis.connection.ReactiveRedisConnectionFactory"),
+                CacheProperties.class,
+                ObjectMapper.class
+            );
+            
+            // Invoke the static method
+            return (CacheAdapter) createMethod.invoke(
+                null,
+                cacheName,
+                keyPrefix,
+                defaultTtl,
+                redisConnectionFactory,
+                properties,
+                objectMapper
+            );
+        } catch (Exception e) {
+            log.error("Failed to create Redis cache adapter via reflection", e);
+            throw new IllegalStateException("Failed to create Redis cache: " + e.getMessage(), e);
         }
-
-        log.debug("  → Configuring Redis adapter with prefix '{}'", keyPrefix);
-
-        CacheProperties.RedisConfig redisProps = properties.getRedis();
-        CacheSerializer serializer = new JsonCacheSerializer(objectMapper);
-
-        // Create Redis template with custom key prefix
-        StringRedisSerializer stringSerializer = new StringRedisSerializer();
-        GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(objectMapper);
-
-        RedisSerializationContext<String, Object> serializationContext = RedisSerializationContext
-                .<String, Object>newSerializationContext()
-                .key(stringSerializer)
-                .value(jsonSerializer)
-                .hashKey(stringSerializer)
-                .hashValue(jsonSerializer)
-                .build();
-
-        ReactiveRedisTemplate<String, Object> redisTemplate =
-                new ReactiveRedisTemplate<>(redisConnectionFactory, serializationContext);
-
-        RedisCacheConfig config = RedisCacheConfig.builder()
-                .host(redisProps.getHost())
-                .port(redisProps.getPort())
-                .database(redisProps.getDatabase())
-                .password(redisProps.getPassword())
-                .username(redisProps.getUsername())
-                .connectionTimeout(redisProps.getConnectionTimeout())
-                .commandTimeout(redisProps.getCommandTimeout())
-                .keyPrefix(keyPrefix)
-                .defaultTtl(defaultTtl != null ? defaultTtl : redisProps.getDefaultTtl())
-                .enableKeyspaceNotifications(redisProps.isEnableKeyspaceNotifications())
-                .maxPoolSize(redisProps.getMaxPoolSize())
-                .minPoolSize(redisProps.getMinPoolSize())
-                .ssl(redisProps.isSsl())
-                .build();
-
-        return new RedisCacheAdapter(cacheName, redisTemplate, redisConnectionFactory, config, serializer);
     }
 
     /**
