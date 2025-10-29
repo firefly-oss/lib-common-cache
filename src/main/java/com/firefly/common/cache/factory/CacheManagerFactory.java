@@ -192,13 +192,20 @@ public CacheManagerFactory(CacheProperties properties,
             }
         }
 
-        // Fallback cache (Caffeine) when primary is distributed
-        if (resolvedType != CacheType.CAFFEINE && caffeineEnabled) {
+        // If smart composite is enabled and we have L2 + L1, wrap as Smart
+        if (resolvedType != CacheType.CAFFEINE && properties.getSmart().isEnabled() && properties.getCaffeine().isEnabled()) {
+            CacheAdapter l1 = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
+            primaryCache = new com.firefly.common.cache.adapter.smart.SmartCacheAdapter(
+                    cacheName, l1, primaryCache, defaultTtl, properties.getSmart().isBackfillL1OnRead());
+            fallbackCache = null; // Smart includes both
+            log.info("Cache '{}' created: SMART(L1+L2) over {} (TTL: {})", cacheName, resolvedType, defaultTtl);
+        } else if (resolvedType != CacheType.CAFFEINE && properties.getCaffeine().isEnabled()) {
+            // Legacy fallback
             fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
+            log.info("Cache '{}' created: {} + Caffeine fallback (TTL: {})", cacheName, resolvedType, defaultTtl);
+        } else {
+            log.info("Cache '{}' created: {} (TTL: {})", cacheName, resolvedType, defaultTtl);
         }
-
-        log.info("Cache '{}' created: {} {} (TTL: {})", cacheName, resolvedType,
-                fallbackCache != null ? "+ Caffeine fallback" : "(no fallback)", defaultTtl);
 
         return new FireflyCacheManager(primaryCache, fallbackCache);
     }

@@ -87,6 +87,13 @@ public class CacheProperties {
     private RedisConfig redis = new RedisConfig();
 
     /**
+     * Smart (L1+L2) cache configuration.
+     */
+    @Valid
+    @NotNull
+    private SmartConfig smart = new SmartConfig();
+
+    /**
      * Caffeine cache configuration.
      */
     @Data
@@ -234,5 +241,21 @@ public class CacheProperties {
          * Additional Redis configuration properties.
          */
         private Map<String, String> properties = new HashMap<>();
+    }
+
+    /**
+     * Smart (L1+L2) composite cache configuration.
+     */
+    @Data
+    public static class SmartConfig {
+        /** Enable smart L1+L2 cache for distributed providers (write-through). */
+        private boolean enabled = true;
+        /**
+         * Preferred write strategy. Only WRITE_THROUGH is implemented now.
+         * Possible values in future: WRITE_THROUGH, WRITE_BACK.
+         */
+        private String writeStrategy = "WRITE_THROUGH";
+        /** Whether to backfill L1 on L2 hits. */
+        private boolean backfillL1OnRead = true;
     }
 }

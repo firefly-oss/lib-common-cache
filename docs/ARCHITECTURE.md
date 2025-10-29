@@ -68,7 +68,12 @@ The library follows these key principles:
 - **`Hazelcast`/`JCache` adapters**: Optional providers discovered via SPI
 - **`NoOpCacheAdapter`**: Disabled cache for testing
 
-## Public API
+### Public API
+
+Smart L1+L2 cache
+- When a distributed provider is chosen and Caffeine is enabled, the system creates a SmartCache (L1 Caffeine + L2 provider) using a write‑through strategy.
+- Reads hit L1; on L1 miss, read from L2 and optionally backfill L1; writes update both.
+- Benefits: low latency, fewer network trips, consistent keys, safe isolation per cache name/prefix.
 
 The main entry point is the `FireflyCacheManager` class:
 

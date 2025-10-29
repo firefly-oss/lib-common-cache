@@ -364,6 +364,17 @@ firefly:
         command-timeout: PT8S
 ```
 
+## Smart (L1+L2) Configuration
+
+```yaml
+firefly:
+  cache:
+    smart:
+      enabled: true            # Enable SmartCache automatically when a distributed provider is used
+      write-strategy: WRITE_THROUGH
+      backfill-l1-on-read: true
+```
+
 ## Multiple Cache Instances
 
 You can configure multiple named cache instances with different settings.
