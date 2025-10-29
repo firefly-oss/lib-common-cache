@@ -8,8 +8,8 @@ This document explains the simplified architecture of the Firefly Common Cache l
 
 The library follows these key principles:
 
-1. **Simplicity First**: `FireflyCacheManager` **IS** the cache, not a manager of multiple caches
-2. **Single Cache Instance**: One cache configuration per application
+1. **Simplicity First**: `FireflyCacheManager` **IS** the cache instance (no Spring Cache abstraction required)
+2. **Multiple Isolated Caches**: Create as many independent caches as you need via `CacheManagerFactory`
 3. **Automatic Fallback**: Built-in support for primary/fallback pattern (e.g., Redis → Caffeine)
 4. **Hexagonal Architecture**: Clean separation between public API and internal adapters
 5. **Consistent Key Format**: Both Caffeine and Redis use `keyPrefix:cacheName:key`
@@ -50,9 +50,9 @@ The library follows these key principles:
 ## Hexagonal Architecture (Ports and Adapters)
 
 ### Public API (Application Layer)
-- **`FireflyCacheManager`**: Main cache interface
+- **`FireflyCacheManager`**: Cache instance API (manager implements cache)
   - Implements `CacheAdapter` directly
-  - Single instance per application
+  - One bean per logical cache in your app (e.g., default, http-idempotency, rule-engine, webhooks)
   - Delegates to primary cache with optional fallback
   - Provides all cache operations
 
@@ -218,9 +218,9 @@ The library provides two auto-configuration classes:
 ### 1. CacheAutoConfiguration (Always Loaded)
 - **Package:** `com.firefly.common.cache.config`
 - **Provides:**
-  - `FireflyCacheManager` bean (primary cache manager)
+  - `CacheManagerFactory` bean (to create named cache instances)
+  - `FireflyCacheManager` default bean (primary cache instance)
   - `CacheSerializer` bean (JSON serialization)
-  - `CaffeineCacheAdapter` bean (when Caffeine is on classpath - always)
 
 ### 2. RedisCacheAutoConfiguration (Conditionally Loaded)
 - **Package:** `com.firefly.common.cache.config`
@@ -228,7 +228,6 @@ The library provides two auto-configuration classes:
 - **Provides:**
   - `ReactiveRedisConnectionFactory` bean
   - `ReactiveRedisTemplate` bean
-  - `RedisCacheAdapter` bean
 
 ### Bean Creation Logic
 
@@ -302,10 +301,10 @@ public MyService myService(FireflyCacheManager cacheManager) {
 
 ### Design Decisions
 
-1. **Single Cache Instance**
-   - Simplified from managing multiple caches to being the cache itself
-   - Reduces complexity and API surface
-   - Easier to understand and use
+1. **Multiple Named Cache Instances**
+   - Create isolated caches for different concerns (e.g., http-idempotency, rule-engine)
+   - Avoids key collisions and simplifies TTL/size tuning per concern
+   - Clear ownership via bean names and key prefixes
 
 2. **Direct Implementation of CacheAdapter**
    - `FireflyCacheManager` implements `CacheAdapter` directly

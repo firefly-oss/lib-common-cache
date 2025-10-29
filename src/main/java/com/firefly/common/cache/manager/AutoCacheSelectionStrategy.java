@@ -98,10 +98,12 @@ public class AutoCacheSelectionStrategy implements CacheSelectionStrategy {
      */
     private int getTypePriority(CacheType cacheType) {
         return switch (cacheType) {
-            case CAFFEINE -> 1;   // Highest priority - fast, reliable in-memory cache (default)
-            case REDIS -> 2;      // High priority - distributed and persistent
-            case NOOP -> 999;     // Lowest priority - fallback only
-            case AUTO -> 100;     // Should not happen, but handle gracefully
+            case REDIS -> 1;       // Distributed and persistent
+            case HAZELCAST -> 2;   // Distributed in-memory grid
+            case JCACHE -> 3;      // Standard JCache provider
+            case CAFFEINE -> 4;    // Fast in-memory (default when no distributed provider configured)
+            case NOOP -> 999;      // Lowest priority - fallback only
+            case AUTO -> 100;      // Should not happen, but handle gracefully
         };
     }
 

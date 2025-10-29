@@ -151,7 +151,7 @@ Welcome to the Firefly Common Cache Library documentation! This directory contai
 Clean separation between business logic and infrastructure. Learn more in [Architecture Guide](ARCHITECTURE.md#hexagonal-architecture).
 
 ### Multiple Cache Providers
-Support for Caffeine (in-memory) and Redis (distributed). See [Configuration Reference](CONFIGURATION.md#cache-types).
+Support for Caffeine (in-memory), Redis (distributed), Hazelcast (distributed in-memory grid), and JCache (JSR‑107 providers like Ehcache/Infinispan). See [Configuration Reference](CONFIGURATION.md#cache-types).
 
 ### Reactive API
 Non-blocking operations using Project Reactor. Examples in [API Reference](API_REFERENCE.md#fireflycachemanager).

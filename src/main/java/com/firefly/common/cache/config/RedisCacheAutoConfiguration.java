@@ -17,11 +17,7 @@
 package com.firefly.common.cache.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.firefly.common.cache.adapter.redis.RedisCacheAdapter;
-import com.firefly.common.cache.adapter.redis.RedisCacheConfig;
-import com.firefly.common.cache.core.CacheAdapter;
 import com.firefly.common.cache.properties.CacheProperties;
-import com.firefly.common.cache.serialization.CacheSerializer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
@@ -29,7 +25,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.connection.ReactiveRedisConnectionFactory;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
@@ -41,10 +36,13 @@ import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 /**
- * Auto-configuration for Redis cache support.
- * <p>
- * This configuration is only loaded when Redis classes are available on the classpath.
- * It provides Redis connection factory, template, and cache adapter beans.
+ * Auto-configuration for Redis infrastructure beans used by lib-common-cache.
+ *
+ * This configuration is only loaded when Redis classes are on the classpath. It
+ * provides a ReactiveRedisConnectionFactory and ReactiveRedisTemplate when a
+ * Redis host is configured. Cache adapters themselves are created on-demand by
+ * CacheManagerFactory via RedisCacheHelper to avoid premature bean creation and
+ * to support multiple independent caches per application.
  */
 @AutoConfiguration(after = CacheAutoConfiguration.class)
 @ConditionalOnClass(name = "org.springframework.data.redis.core.ReactiveRedisTemplate")
@@ -52,9 +50,8 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 public class RedisCacheAutoConfiguration {
 
     /**
-     * Creates a Redis connection factory from Firefly cache properties when:
-     * - No existing ReactiveRedisConnectionFactory bean exists
-     * - Redis is enabled (or not explicitly disabled) AND host is configured
+     * Creates a Redis connection factory when no existing bean is present and a
+     * Redis host is configured.
      */
     @Bean
     @ConditionalOnMissingBean(ReactiveRedisConnectionFactory.class)
@@ -62,33 +59,32 @@ public class RedisCacheAutoConfiguration {
     public ReactiveRedisConnectionFactory redisConnectionFactory(CacheProperties properties) {
         log.debug("Creating Redis connection factory from Firefly cache properties");
         CacheProperties.RedisConfig redisProps = properties.getRedis();
-        
+
         RedisStandaloneConfiguration serverConfig = new RedisStandaloneConfiguration();
         serverConfig.setHostName(redisProps.getHost());
         serverConfig.setPort(redisProps.getPort());
         serverConfig.setDatabase(redisProps.getDatabase());
-        
+
         if (redisProps.getPassword() != null) {
             serverConfig.setPassword(redisProps.getPassword());
         }
         if (redisProps.getUsername() != null) {
             serverConfig.setUsername(redisProps.getUsername());
         }
-        
+
         LettuceClientConfiguration clientConfig = LettuceClientConfiguration.builder()
                 .commandTimeout(redisProps.getCommandTimeout())
                 .build();
-        
+
         log.info("   • Redis host: {}:{}", redisProps.getHost(), redisProps.getPort());
         log.info("   • Redis database: {}", redisProps.getDatabase());
-        
+
         return new LettuceConnectionFactory(serverConfig, clientConfig);
     }
 
     /**
-     * Creates a Redis template from connection factory when:
-     * - No existing ReactiveRedisTemplate bean exists
-     * - ReactiveRedisConnectionFactory is available
+     * Creates a ReactiveRedisTemplate backed by the configured connection
+     * factory when one is not already present.
      */
     @Bean
     @ConditionalOnMissingBean(ReactiveRedisTemplate.class)
@@ -97,11 +93,11 @@ public class RedisCacheAutoConfiguration {
             ReactiveRedisConnectionFactory connectionFactory,
             @Qualifier("cacheObjectMapper") ObjectMapper objectMapper) {
         log.debug("Creating ReactiveRedisTemplate from connection factory");
-        
+
         // Configure serializers
         StringRedisSerializer stringSerializer = new StringRedisSerializer();
         GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(objectMapper);
-        
+
         RedisSerializationContext<String, Object> serializationContext = RedisSerializationContext
                 .<String, Object>newSerializationContext()
                 .key(stringSerializer)
@@ -109,40 +105,7 @@ public class RedisCacheAutoConfiguration {
                 .hashKey(stringSerializer)
                 .hashValue(jsonSerializer)
                 .build();
-        
+
         return new ReactiveRedisTemplate<>(connectionFactory, serializationContext);
     }
-
-    /**
-     * Creates a Redis cache adapter when Redis is available and enabled.
-     */
-    @Bean
-    @ConditionalOnProperty(prefix = "firefly.cache.redis.default", name = "enabled", havingValue = "true", matchIfMissing = true)
-    @ConditionalOnBean({ReactiveRedisTemplate.class, ReactiveRedisConnectionFactory.class})
-    public CacheAdapter redisCacheAdapter(CacheProperties properties,
-                                         ReactiveRedisTemplate<String, Object> redisTemplate,
-                                         ReactiveRedisConnectionFactory connectionFactory,
-                                         CacheSerializer serializer) {
-        log.debug("Creating Redis cache adapter");
-        CacheProperties.RedisConfig redisProps = properties.getRedis();
-        
-        RedisCacheConfig config = RedisCacheConfig.builder()
-                .host(redisProps.getHost())
-                .port(redisProps.getPort())
-                .database(redisProps.getDatabase())
-                .password(redisProps.getPassword())
-                .username(redisProps.getUsername())
-                .connectionTimeout(redisProps.getConnectionTimeout())
-                .commandTimeout(redisProps.getCommandTimeout())
-                .keyPrefix(redisProps.getKeyPrefix())
-                .defaultTtl(redisProps.getDefaultTtl())
-                .enableKeyspaceNotifications(redisProps.isEnableKeyspaceNotifications())
-                .maxPoolSize(redisProps.getMaxPoolSize())
-                .minPoolSize(redisProps.getMinPoolSize())
-                .ssl(redisProps.isSsl())
-                .build();
-
-        return new RedisCacheAdapter(redisProps.getCacheName(), redisTemplate, connectionFactory, config, serializer);
-    }
 }
-

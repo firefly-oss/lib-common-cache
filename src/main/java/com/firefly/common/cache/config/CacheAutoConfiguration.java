@@ -103,14 +103,37 @@ public class CacheAutoConfiguration {
     public com.firefly.common.cache.factory.CacheManagerFactory cacheManagerFactoryWithRedis(
             CacheProperties properties,
             @Qualifier("cacheObjectMapper") ObjectMapper objectMapper,
-            org.springframework.beans.factory.ObjectProvider<org.springframework.data.redis.connection.ReactiveRedisConnectionFactory> redisConnectionFactoryProvider) {
+            org.springframework.beans.factory.ObjectProvider<org.springframework.data.redis.connection.ReactiveRedisConnectionFactory> redisConnectionFactoryProvider,
+            org.springframework.context.ApplicationContext applicationContext) {
         log.info("Creating CacheManagerFactory (with Redis support)");
         org.springframework.data.redis.connection.ReactiveRedisConnectionFactory redisConnectionFactory =
                 redisConnectionFactoryProvider.getIfAvailable();
+
+        // Resolve optional HazelcastInstance via reflection
+        Object hazelcastInstance = null;
+        try {
+            Class<?> hzClazz = Class.forName("com.hazelcast.core.HazelcastInstance");
+            hazelcastInstance = applicationContext.getBeanProvider(hzClazz).getIfAvailable();
+        } catch (ClassNotFoundException ignored) { }
+
+        // Resolve optional JCache CacheManager (javax or jakarta)
+        Object jcacheManager = null;
+        try {
+            Class<?> jcacheClazz;
+            try {
+                jcacheClazz = Class.forName("javax.cache.CacheManager");
+            } catch (ClassNotFoundException ex) {
+                jcacheClazz = Class.forName("jakarta.cache.CacheManager");
+            }
+            jcacheManager = applicationContext.getBeanProvider(jcacheClazz).getIfAvailable();
+        } catch (ClassNotFoundException ignored) { }
+
         return new com.firefly.common.cache.factory.CacheManagerFactory(
                 properties,
                 objectMapper,
-                redisConnectionFactory
+                redisConnectionFactory,
+                hazelcastInstance,
+                jcacheManager
         );
     }
 
@@ -123,12 +146,35 @@ public class CacheAutoConfiguration {
     @ConditionalOnMissingBean
     public com.firefly.common.cache.factory.CacheManagerFactory cacheManagerFactoryCaffeineOnly(
             CacheProperties properties,
-            @Qualifier("cacheObjectMapper") ObjectMapper objectMapper) {
+            @Qualifier("cacheObjectMapper") ObjectMapper objectMapper,
+            org.springframework.context.ApplicationContext applicationContext) {
         log.info("Creating CacheManagerFactory (Caffeine-only, Redis not available)");
+
+        // Resolve optional HazelcastInstance via reflection
+        Object hazelcastInstance = null;
+        try {
+            Class<?> hzClazz = Class.forName("com.hazelcast.core.HazelcastInstance");
+            hazelcastInstance = applicationContext.getBeanProvider(hzClazz).getIfAvailable();
+        } catch (ClassNotFoundException ignored) { }
+
+        // Resolve optional JCache CacheManager (javax or jakarta)
+        Object jcacheManager = null;
+        try {
+            Class<?> jcacheClazz;
+            try {
+                jcacheClazz = Class.forName("javax.cache.CacheManager");
+            } catch (ClassNotFoundException ex) {
+                jcacheClazz = Class.forName("jakarta.cache.CacheManager");
+            }
+            jcacheManager = applicationContext.getBeanProvider(jcacheClazz).getIfAvailable();
+        } catch (ClassNotFoundException ignored) { }
+
         return new com.firefly.common.cache.factory.CacheManagerFactory(
                 properties,
                 objectMapper,
-                null  // No Redis support
+                null,  // No Redis support
+                hazelcastInstance,
+                jcacheManager
         );
     }
 

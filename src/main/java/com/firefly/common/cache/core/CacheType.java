@@ -59,6 +59,16 @@ public enum CacheType {
     REDIS("redis", "Redis Distributed Cache"),
 
     /**
+     * Hazelcast cache - Distributed in-memory data grid.
+     */
+    HAZELCAST("hazelcast", "Hazelcast Distributed Cache"),
+
+    /**
+     * JCache (JSR-107) provider - Generic cache API (backed by Ehcache, Infinispan, etc.).
+     */
+    JCACHE("jcache", "JCache (JSR-107) Cache"),
+
+    /**
      * No-operation cache - Disables caching.
      * <p>
      * Characteristics:
@@ -76,7 +86,9 @@ public enum CacheType {
      * The system will automatically choose the best available cache:
      * <ol>
      *   <li>Redis if configured and available</li>
-     *   <li>Caffeine if Redis is not available</li>
+     *   <li>Hazelcast if available</li>
+     *   <li>JCache if available</li>
+     *   <li>Caffeine if none of the above are available</li>
      *   <li>No-Op if no cache is available</li>
      * </ol>
      */

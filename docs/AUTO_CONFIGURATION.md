@@ -42,10 +42,9 @@ When you add the library as a dependency, Spring Boot automatically configures:
 1. **CacheProperties** - Configuration properties from `firefly.cache.*`
 2. **ObjectMapper** - JSON serialization (if not already present)
 3. **CacheSerializer** - Cache value serialization
-4. **CacheSelectionStrategy** - Strategy for selecting cache adapters
-5. **FireflyCacheManager** - Main cache manager
-6. **CaffeineCacheAdapter** - In-memory cache (if Caffeine is on classpath)
-7. **RedisCacheAdapter** - Distributed cache (if Redis is configured)
+4. **CacheManagerFactory** - Factory to create multiple independent caches
+5. **FireflyCacheManager (default)** - Primary default cache instance
+6. **Redis infrastructure** - Connection factory and template (if Redis is configured)
 
 ### Activation Conditions
 
@@ -100,18 +99,17 @@ firefly:
 
 ### Redis Configuration
 
-Redis is only configured when you provide a host:
+Redis infrastructure is configured when you provide a host (no `.default` nesting):
 
 ```yaml
 firefly:
   cache:
     redis:
-      default:
-        enabled: true  # Default: true
-        host: localhost
-        port: 6379
-        database: 0
-        password: ${REDIS_PASSWORD}  # Optional
+      enabled: true  # Default: true
+      host: localhost
+      port: 6379
+      database: 0
+      password: ${REDIS_PASSWORD}  # Optional
 ```
 
 ## Conditional Beans
@@ -138,18 +136,19 @@ firefly:
 - Another `ReactiveRedisConnectionFactory` bean exists
 - No host is configured
 
-### Redis Cache Adapter
+### Redis Cache Infrastructure
 
-**Created when**:
+The library only auto-configures Redis infrastructure (connection factory and template). Actual caches are created on-demand via `CacheManagerFactory`.
+
+**Infrastructure created when**:
 - Redis libraries are on classpath
-- `firefly.cache.redis.default.enabled=true` (default)
-- `ReactiveRedisConnectionFactory` bean exists
-- `ReactiveRedisTemplate` bean exists
+- `firefly.cache.redis.enabled=true` (default)
+- `firefly.cache.redis.host` is configured
 
 **Not created when**:
 - Redis libraries are missing
-- `firefly.cache.redis.default.enabled=false`
-- Required beans are missing
+- `firefly.cache.redis.enabled=false`
+- No host is configured
 
 ## Customization
 
@@ -321,13 +320,12 @@ firefly:
   cache:
     default-cache-type: REDIS
     redis:
-      default:
-        host: ${REDIS_HOST:localhost}
-        port: ${REDIS_PORT:6379}
-        database: 0
-        password: ${REDIS_PASSWORD}
-        key-prefix: "myapp:cache"
-        default-ttl: PT1H
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      password: ${REDIS_PASSWORD}
+      key-prefix: "myapp:cache"
+      default-ttl: PT1H
 ```
 
 ### Example 4: Multiple Caches

@@ -60,7 +60,11 @@ public class CacheManagerFactory {
     private final CacheProperties properties;
     private final ObjectMapper objectMapper;
     private final Object redisConnectionFactory; // Use Object to avoid loading Redis classes
+    private final Object hazelcastInstance;      // Optional HazelcastInstance
+    private final Object jcacheManager;          // Optional JCache CacheManager
     private final boolean redisAvailable;
+    private final boolean hazelcastAvailable;
+    private final boolean jcacheAvailable;
 
     /**
      * Creates a new CacheManagerFactory.
@@ -69,14 +73,21 @@ public class CacheManagerFactory {
      * @param objectMapper the object mapper for serialization
      * @param redisConnectionFactory optional Redis connection factory (can be null)
      */
-    public CacheManagerFactory(CacheProperties properties,
+public CacheManagerFactory(CacheProperties properties,
                                 ObjectMapper objectMapper,
-                                Object redisConnectionFactory) {
+                                Object redisConnectionFactory,
+                                Object hazelcastInstance,
+                                Object jcacheManager) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.redisConnectionFactory = redisConnectionFactory;
+        this.hazelcastInstance = hazelcastInstance;
+        this.jcacheManager = jcacheManager;
         this.redisAvailable = checkRedisAvailable();
-        log.info("CacheManagerFactory initialized (Redis available: {})", redisAvailable);
+        this.hazelcastAvailable = checkHazelcastAvailable();
+        this.jcacheAvailable = checkJCacheAvailable();
+        log.info("CacheManagerFactory initialized (Redis: {}, Hazelcast: {}, JCache: {})",
+                redisAvailable, hazelcastAvailable, jcacheAvailable);
     }
 
     /**
@@ -87,6 +98,31 @@ public class CacheManagerFactory {
             Class.forName("org.springframework.data.redis.connection.ReactiveRedisConnectionFactory");
             Class.forName("com.firefly.common.cache.factory.RedisCacheHelper");
             return redisConnectionFactory != null;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
+    private boolean checkHazelcastAvailable() {
+        try {
+            Class.forName("com.hazelcast.core.HazelcastInstance");
+            Class.forName("com.firefly.common.cache.factory.HazelcastCacheHelper");
+            return hazelcastInstance != null;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
+    private boolean checkJCacheAvailable() {
+        try {
+            // Try both javax and jakarta
+            try {
+                Class.forName("javax.cache.CacheManager");
+            } catch (ClassNotFoundException ex) {
+                Class.forName("jakarta.cache.CacheManager");
+            }
+            Class.forName("com.firefly.common.cache.factory.JCacheCacheHelper");
+            return jcacheManager != null;
         } catch (ClassNotFoundException e) {
             return false;
         }
@@ -134,6 +170,10 @@ public class CacheManagerFactory {
         if (cacheType == CacheType.AUTO) {
             if (redisEnabled) {
                 resolvedType = CacheType.REDIS;
+            } else if (hazelcastAvailable) {
+                resolvedType = CacheType.HAZELCAST;
+            } else if (jcacheAvailable) {
+                resolvedType = CacheType.JCACHE;
             } else if (caffeineEnabled) {
                 resolvedType = CacheType.CAFFEINE;
             } else {
@@ -147,20 +187,32 @@ public class CacheManagerFactory {
         // Create cache based on resolved type
         if (resolvedType == CacheType.REDIS && redisEnabled) {
             primaryCache = createRedisCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
-            // Only create fallback for distributed caches to handle Redis failures (if Caffeine is enabled)
             if (caffeineEnabled) {
                 fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
             }
-            log.info("Cache '{}' created: {} {} (TTL: {})", cacheName, resolvedType, 
+            log.info("Cache '{}' created: {} {} (TTL: {})", cacheName, resolvedType,
+                    fallbackCache != null ? "+ Caffeine fallback" : "(no fallback)", defaultTtl);
+        } else if (resolvedType == CacheType.HAZELCAST && hazelcastAvailable) {
+            primaryCache = createHazelcastCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
+            if (caffeineEnabled) {
+                fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
+            }
+            log.info("Cache '{}' created: {} {} (TTL: {})", cacheName, resolvedType,
+                    fallbackCache != null ? "+ Caffeine fallback" : "(no fallback)", defaultTtl);
+        } else if (resolvedType == CacheType.JCACHE && jcacheAvailable) {
+            primaryCache = createJCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
+            if (caffeineEnabled) {
+                fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
+            }
+            log.info("Cache '{}' created: {} {} (TTL: {})", cacheName, resolvedType,
                     fallbackCache != null ? "+ Caffeine fallback" : "(no fallback)", defaultTtl);
         } else if (resolvedType == CacheType.CAFFEINE && caffeineEnabled) {
             primaryCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
             log.info("Cache '{}' created: {} (TTL: {})", cacheName, resolvedType, defaultTtl);
         } else {
             throw new IllegalStateException(
-                String.format("Cannot create cache of type %s: %s",
-                    resolvedType,
-                    resolvedType == CacheType.REDIS ? "Redis is not available or not enabled" : "Caffeine is not enabled")
+                String.format("Cannot create cache of type %s: provider not available or not enabled",
+                    resolvedType)
             );
         }
 
@@ -217,7 +269,7 @@ public class CacheManagerFactory {
     private CacheAdapter createRedisCacheAdapterViaReflection(String cacheName, String keyPrefix, Duration defaultTtl) {
         try {
             log.debug("  → Configuring Redis adapter with prefix '{}' (via reflection)", keyPrefix);
-            
+
             // Load RedisCacheHelper class dynamically
             Class<?> helperClass = Class.forName("com.firefly.common.cache.factory.RedisCacheHelper");
             Method createMethod = helperClass.getMethod(
@@ -229,7 +281,7 @@ public class CacheManagerFactory {
                 CacheProperties.class,
                 ObjectMapper.class
             );
-            
+
             // Invoke the static method
             return (CacheAdapter) createMethod.invoke(
                 null,
@@ -243,6 +295,65 @@ public class CacheManagerFactory {
         } catch (Exception e) {
             log.error("Failed to create Redis cache adapter via reflection", e);
             throw new IllegalStateException("Failed to create Redis cache: " + e.getMessage(), e);
+        }
+    }
+
+    private CacheAdapter createHazelcastCacheAdapterViaReflection(String cacheName, String keyPrefix, Duration defaultTtl) {
+        try {
+            log.debug("  → Configuring Hazelcast adapter with prefix '{}' (via reflection)", keyPrefix);
+
+            Class<?> helperClass = Class.forName("com.firefly.common.cache.factory.HazelcastCacheHelper");
+            Method createMethod = helperClass.getMethod(
+                "createHazelcastCacheAdapter",
+                String.class,
+                String.class,
+                Duration.class,
+                Class.forName("com.hazelcast.core.HazelcastInstance")
+            );
+
+            return (CacheAdapter) createMethod.invoke(
+                null,
+                cacheName,
+                keyPrefix,
+                defaultTtl,
+                hazelcastInstance
+            );
+        } catch (Exception e) {
+            log.error("Failed to create Hazelcast cache adapter via reflection", e);
+            throw new IllegalStateException("Failed to create Hazelcast cache: " + e.getMessage(), e);
+        }
+    }
+
+    private CacheAdapter createJCacheAdapterViaReflection(String cacheName, String keyPrefix, Duration defaultTtl) {
+        try {
+            log.debug("  → Configuring JCache adapter with prefix '{}' (via reflection)", keyPrefix);
+
+            Class<?> helperClass = Class.forName("com.firefly.common.cache.factory.JCacheCacheHelper");
+            // Try javax first, then jakarta for the CacheManager parameter type
+            Class<?> cacheManagerClass;
+            try {
+                cacheManagerClass = Class.forName("javax.cache.CacheManager");
+            } catch (ClassNotFoundException ex) {
+                cacheManagerClass = Class.forName("jakarta.cache.CacheManager");
+            }
+            Method createMethod = helperClass.getMethod(
+                "createJCacheAdapter",
+                String.class,
+                String.class,
+                Duration.class,
+                cacheManagerClass
+            );
+
+            return (CacheAdapter) createMethod.invoke(
+                null,
+                cacheName,
+                keyPrefix,
+                defaultTtl,
+                jcacheManager
+            );
+        } catch (Exception e) {
+            log.error("Failed to create JCache adapter via reflection", e);
+            throw new IllegalStateException("Failed to create JCache cache: " + e.getMessage(), e);
         }
     }
 
