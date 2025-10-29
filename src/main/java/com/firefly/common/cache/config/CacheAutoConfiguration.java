@@ -132,6 +132,18 @@ public class CacheAutoConfiguration {
         );
     }
 
-    // Default cache manager removed - applications should create specific caches as needed
+    /**
+     * Creates a default FireflyCacheManager bean using the factory.
+     * <p>
+     * This provides a default cache manager that applications can use out of the box.
+     * Applications can also inject the CacheManagerFactory to create additional cache managers.
+     */
+    @Bean
+    @Primary
+    @ConditionalOnMissingBean
+    public FireflyCacheManager fireflyCacheManager(com.firefly.common.cache.factory.CacheManagerFactory factory) {
+        log.info("Creating default FireflyCacheManager");
+        return factory.createDefaultCacheManager("default");
+    }
 
 }
