@@ -125,24 +125,43 @@ public class CacheManagerFactory {
                                                    Duration defaultTtl,
                                                    String description,
                                                    String requestedBy) {
-        // Resolve AUTO to actual type based on availability
+        // Check what's available and enabled
+        boolean caffeineEnabled = properties.getCaffeine().isEnabled();
+        boolean redisEnabled = properties.getRedis().isEnabled() && redisAvailable;
+        
+        // Resolve AUTO to actual type based on availability and enabled flags
         CacheType resolvedType = cacheType;
         if (cacheType == CacheType.AUTO) {
-            resolvedType = redisAvailable ? CacheType.REDIS : CacheType.CAFFEINE;
+            if (redisEnabled) {
+                resolvedType = CacheType.REDIS;
+            } else if (caffeineEnabled) {
+                resolvedType = CacheType.CAFFEINE;
+            } else {
+                throw new IllegalStateException("No cache adapters available. At least one cache type must be enabled.");
+            }
         }
 
         CacheAdapter primaryCache;
         CacheAdapter fallbackCache = null;
 
         // Create cache based on resolved type
-        if (resolvedType == CacheType.REDIS && redisAvailable) {
+        if (resolvedType == CacheType.REDIS && redisEnabled) {
             primaryCache = createRedisCacheAdapterViaReflection(cacheName, keyPrefix, defaultTtl);
-            // Only create fallback for distributed caches to handle Redis failures
-            fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
-            log.info("Cache '{}' created: {} + Caffeine fallback (TTL: {})", cacheName, resolvedType, defaultTtl);
-        } else {
+            // Only create fallback for distributed caches to handle Redis failures (if Caffeine is enabled)
+            if (caffeineEnabled) {
+                fallbackCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
+            }
+            log.info("Cache '{}' created: {} {} (TTL: {})", cacheName, resolvedType, 
+                    fallbackCache != null ? "+ Caffeine fallback" : "(no fallback)", defaultTtl);
+        } else if (resolvedType == CacheType.CAFFEINE && caffeineEnabled) {
             primaryCache = createCaffeineCacheAdapter(cacheName, keyPrefix, defaultTtl);
             log.info("Cache '{}' created: {} (TTL: {})", cacheName, resolvedType, defaultTtl);
+        } else {
+            throw new IllegalStateException(
+                String.format("Cannot create cache of type %s: %s",
+                    resolvedType,
+                    resolvedType == CacheType.REDIS ? "Redis is not available or not enabled" : "Caffeine is not enabled")
+            );
         }
 
         return new FireflyCacheManager(primaryCache, fallbackCache);
@@ -234,12 +253,39 @@ public class CacheManagerFactory {
      * @return a configured FireflyCacheManager
      */
     public FireflyCacheManager createDefaultCacheManager(String cacheName) {
+        // Validate that at least one cache type is available and enabled
+        boolean caffeineEnabled = properties.getCaffeine().isEnabled();
+        boolean redisEnabled = properties.getRedis().isEnabled() && redisAvailable;
+        
+        if (!caffeineEnabled && !redisEnabled) {
+            throw new IllegalStateException(
+                "No cache adapters available. At least one cache type (Caffeine or Redis) must be enabled."
+            );
+        }
+        
         CacheType cacheType = properties.getDefaultCacheType();
-        String keyPrefix = "firefly:cache:" + cacheName;
+        
+        // Determine the actual cache name from properties
+        String actualCacheName = cacheName;
+        if (cacheType == CacheType.CAFFEINE || (cacheType == CacheType.AUTO && !redisEnabled)) {
+            // Use Caffeine cache name if available and not default
+            String caffeineCacheName = properties.getCaffeine().getCacheName();
+            if (caffeineCacheName != null && !"default".equals(caffeineCacheName)) {
+                actualCacheName = caffeineCacheName;
+            }
+        } else if (cacheType == CacheType.REDIS || (cacheType == CacheType.AUTO && redisEnabled)) {
+            // Use Redis cache name if available and not default
+            String redisCacheName = properties.getRedis().getCacheName();
+            if (redisCacheName != null && !"default".equals(redisCacheName)) {
+                actualCacheName = redisCacheName;
+            }
+        }
+        
+        String keyPrefix = "firefly:cache:" + actualCacheName;
         Duration defaultTtl = cacheType == CacheType.REDIS
                 ? properties.getRedis().getDefaultTtl()
                 : properties.getCaffeine().getExpireAfterWrite();
 
-        return createCacheManager(cacheName, cacheType, keyPrefix, defaultTtl);
+        return createCacheManager(actualCacheName, cacheType, keyPrefix, defaultTtl);
     }
 }
