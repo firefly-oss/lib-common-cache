@@ -31,6 +31,7 @@ A unified caching library providing standardized cache abstractions with Caffein
   - [Cache Types](#cache-types)
   - [Caffeine Configuration](#caffeine-configuration)
   - [Redis Configuration](#redis-configuration)
+  - [Smart (L1+L2) Configuration](#-smart-l1l2-cache)
 - [Monitoring](#-monitoring)
   - [Health Checks](#health-checks)
   - [Metrics](#metrics)
@@ -51,7 +52,9 @@ A unified caching library providing standardized cache abstractions with Caffein
 - **Optional Dependencies**: Redis is completely optional - use Caffeine-only or add Redis when needed ([see guide](docs/OPTIONAL_DEPENDENCIES.md))
 - **Multiple Independent Caches**: Create multiple isolated cache managers with different configurations in the same application
 - **Hexagonal Architecture**: Clean separation between business logic and infrastructure ([see architecture](docs/ARCHITECTURE.md))
-- **Multiple Cache Providers**: Support for Caffeine (in-memory) and Redis (distributed)
+- **Multiple Cache Providers**: Caffeine (in-memory), Redis (distributed), Hazelcast (distributed in-memory grid), JCache/JSR‑107 (Ehcache/Infinispan)
+- **Smart L1+L2 Cache**: Automatic two-level cache (L1 Caffeine + L2 distributed) with write‑through and optional backfill
+- **Provider SPI**: Pluggable providers via ServiceLoader (Redis/Hazelcast/JCache/Caffeine)
 - **Reactive API**: Non-blocking operations using Project Reactor
 - **Auto-Configuration**: Automatic Spring Boot configuration with sensible defaults
 - **Enhanced Logging**: Detailed cache creation tracking with provider information and caller detection
@@ -106,11 +109,17 @@ Customize the cache behavior via `application.yml`:
 firefly:
   cache:
     enabled: true
-    default-cache-type: CAFFEINE  # Options: CAFFEINE, REDIS, AUTO
+    # AUTO prefers REDIS > HAZELCAST > JCACHE > CAFFEINE
+    default-cache-type: AUTO
     metrics-enabled: true
     health-enabled: true
 
-    # Caffeine configuration
+    # Smart L1+L2 (L1 Caffeine + L2 distributed)
+    smart:
+      enabled: true
+      backfill-l1-on-read: true
+
+    # Caffeine configuration (L1 and/or standalone)
     caffeine:
       cache-name: default
       enabled: true
@@ -119,15 +128,19 @@ firefly:
       expire-after-write: PT1H
       record-stats: true
 
-    # Redis configuration (optional - only used if Redis dependencies are present)
+    # Redis configuration (L2)
     redis:
       cache-name: default
       enabled: true
       host: localhost
       port: 6379
       database: 0
-      key-prefix: "firefly:cache"  # Prefix for all cache keys
+      key-prefix: "firefly:cache"
 ```
+
+Optional providers:
+- Hazelcast: add `spring-boot-starter-hazelcast` (or a `HazelcastInstance` bean); set `default-cache-type: HAZELCAST` or `AUTO`.
+- JCache: provide a `javax.cache.CacheManager` or `jakarta.cache.CacheManager` (e.g., Ehcache/Infinispan); set `default-cache-type: JCACHE` or `AUTO`.
 
 ## 💻 Usage
 
@@ -361,6 +374,12 @@ The library provides **detailed logging** when creating cache managers:
 - 🔧 **Provider Info**: See which provider (Redis/Caffeine) is being used
 - ⚠️ **Warnings**: Immediate feedback when Redis is unavailable
 
+## 🧠 Smart (L1+L2) Cache
+
+- When a distributed provider is available and Caffeine is enabled, the factory creates a SmartCache (L1 Caffeine + L2 provider) automatically (write‑through strategy).
+- Reads hit L1; on L1 miss, the value is read from L2 and optionally backfilled into L1; writes update both layers.
+- Benefits: low latency, fewer network calls, consistent keys, and safe isolation per cache name/prefix.
+
 ## 🏗️ Architecture
 
 ### Overview
@@ -371,8 +390,8 @@ The library follows **hexagonal architecture** principles with a simplified desi
 
 1. **Single Cache Instance**: One cache configuration per application (not multiple registered caches)
 2. **Direct API**: `FireflyCacheManager` implements `CacheAdapter` directly for simple usage
-3. **Automatic Fallback**: Built-in support for primary/fallback cache (e.g., Redis → Caffeine)
-4. **Consistent Key Format**: Both Caffeine and Redis use `keyPrefix:cacheName:key` format
+3. **Automatic Fallback / Smart L1+L2**: Built-in support for primary/fallback and optional SMART L1+L2 composition
+4. **Consistent Key Format**: All providers use `keyPrefix:cacheName:key` format
 
 #### Architecture Diagram
 
