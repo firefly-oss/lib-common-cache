@@ -26,6 +26,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.ReactiveRedisConnectionFactory;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
@@ -56,6 +57,7 @@ public class RedisCacheAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(ReactiveRedisConnectionFactory.class)
     @ConditionalOnExpression("${firefly.cache.redis.enabled:true} && '${firefly.cache.redis.host:}'.length() > 0")
+    @Primary
     public ReactiveRedisConnectionFactory redisConnectionFactory(CacheProperties properties) {
         log.debug("Creating Redis connection factory from Firefly cache properties");
         CacheProperties.RedisConfig redisProps = properties.getRedis();
